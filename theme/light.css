@@ -1,0 +1,33 @@
+:root[data-theme="light"] {
+  --color-bg-base: #eef1f7;
+  --color-bg-elevated: #f6f8fc;
+
+  --color-surface-main: #ffffff;
+  --color-surface-soft: rgba(255, 255, 255, 0.74);
+  --color-surface-pressed: #e4e9f2;
+  --color-surface-overlay: rgba(255, 255, 255, 0.65);
+
+  --color-text-primary: #111827;
+  --color-text-secondary: #4b5563;
+  --color-text-tertiary: #8b93a6;
+  --color-text-inverse: #f8fafc;
+
+  --color-border: rgba(51, 65, 85, 0.15);
+  --color-border-strong: rgba(51, 65, 85, 0.24);
+
+  --color-accent-primary: #0a84ff;
+  --color-accent-primary-strong: #0061d6;
+  --color-accent-secondary: #5ac8fa;
+
+  --color-success: #34c759;
+  --color-warning: #ff9f0a;
+  --color-danger: #ff453a;
+  --color-info: #64d2ff;
+
+  --color-glow-primary: rgba(255, 255, 255, 0.7);
+  --color-glow-secondary: rgba(10, 132, 255, 0.22);
+
+  --color-highlight-edge: rgba(255, 255, 255, 0.9);
+  --color-shadow-dark: rgba(17, 24, 39, 0.16);
+  --color-shadow-light: rgba(255, 255, 255, 0.92);
+}
