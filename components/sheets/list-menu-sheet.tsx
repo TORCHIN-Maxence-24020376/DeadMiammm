@@ -17,7 +17,7 @@ type ListMenuSheetProps = {
   visible: boolean;
   palette: AppPalette;
   onClose: () => void;
-  onSelect: (slug: 'frigo' | 'congelateur' | 'sec' | 'animalerie' | 'dph' | 'recipes') => void;
+  onSelect: (slug: 'frigo' | 'congelateur' | 'sec' | 'animalerie' | 'dph' | 'autre' | 'recipes' | 'shopping-lists') => void;
 };
 
 const SHEET_HEIGHT = Math.round(Dimensions.get('window').height * 0.68);
@@ -28,7 +28,9 @@ const entries = [
   { slug: 'sec', title: 'Sec', icon: 'shippingbox.fill' },
   { slug: 'animalerie', title: 'Animalerie', icon: 'pawprint.fill' },
   { slug: 'dph', title: 'DPH', icon: 'cross.case.fill' },
+  { slug: 'autre', title: 'Autre', icon: 'shippingbox.fill' },
   { slug: 'recipes', title: 'Recettes', icon: 'fork.knife' },
+  { slug: 'shopping-lists', title: 'Liste de courses', icon: 'cart.fill' },
 ] as const;
 
 export function ListMenuSheet({ visible, palette, onClose, onSelect }: ListMenuSheetProps) {

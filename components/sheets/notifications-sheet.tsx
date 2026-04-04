@@ -1,7 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppPalette, Typography } from '@/constants/theme';
+import { inferLowStock } from '@/data/inventory';
+import { useAppSettings } from '@/providers/app-settings-provider';
+import { useInventory } from '@/providers/inventory-provider';
+import { daysUntil } from '@/utils/format';
+import { buildRecipeSuggestions } from '@/utils/recipes';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 type NotificationsSheetProps = {
@@ -10,30 +15,64 @@ type NotificationsSheetProps = {
   onClose: () => void;
 };
 
-const notifications = [
-  {
-    id: 'n-1',
-    title: '3 produits expirent cette semaine',
-    body: 'Pense à consulter la vue "bientôt expirés".',
-    icon: 'clock.badge.exclamationmark',
-  },
-  {
-    id: 'n-2',
-    title: 'Nouvelle idée recette disponible',
-    body: 'Bowl poulet yaourt citron basé sur ton frigo.',
-    icon: 'sparkles',
-  },
-  {
-    id: 'n-3',
-    title: 'Liste de courses active',
-    body: 'Ta dernière liste contient 4 articles non cochés.',
-    icon: 'checklist',
-  },
-] as const;
-
 export function NotificationsSheet({ visible, palette, onClose }: NotificationsSheetProps) {
+  const { products } = useInventory();
+  const { notifications: notificationSettings, expiringSoonDays, lowStockThreshold } = useAppSettings();
   const [mounted, setMounted] = useState(visible);
   const offsetY = useRef(new Animated.Value(400)).current;
+
+  const notifications = useMemo(() => {
+    const items: { id: string; title: string; body: string; icon: 'clock.badge.exclamationmark' | 'checklist' | 'sparkles' | 'checkmark.circle.fill' }[] = [];
+
+    if (notificationSettings.expiring) {
+      const expiringCount = products.filter((product) => product.expiresAt && daysUntil(product.expiresAt) <= expiringSoonDays).length;
+      if (expiringCount > 0) {
+        items.push({
+          id: 'expiring',
+          title: `${expiringCount} produit${expiringCount > 1 ? 's' : ''} proche${expiringCount > 1 ? 's' : ''} de la date`,
+          body: `Seuil actif: ${expiringSoonDays} jour${expiringSoonDays > 1 ? 's' : ''}.`,
+          icon: 'clock.badge.exclamationmark',
+        });
+      }
+    }
+
+    if (notificationSettings.lowStock) {
+      const lowStockCount = products.filter((product) => inferLowStock(product, lowStockThreshold)).length;
+      if (lowStockCount > 0) {
+        items.push({
+          id: 'low-stock',
+          title: `${lowStockCount} produit${lowStockCount > 1 ? 's' : ''} en stock faible`,
+          body: `Seuil actif: quantité <= ${lowStockThreshold}.`,
+          icon: 'checklist',
+        });
+      }
+    }
+
+    if (notificationSettings.recipes) {
+      const recipes = buildRecipeSuggestions(products, { expiringSoonDays });
+      if (recipes.length > 0) {
+        items.push({
+          id: 'recipes',
+          title: 'Nouvelle idée recette',
+          body: recipes[0].title,
+          icon: 'sparkles',
+        });
+      }
+    }
+
+    if (items.length > 0) {
+      return items;
+    }
+
+    return [
+      {
+        id: 'empty',
+        title: 'Aucune alerte active',
+        body: 'Aucune action urgente pour le moment.',
+        icon: 'checkmark.circle.fill' as const,
+      },
+    ];
+  }, [expiringSoonDays, lowStockThreshold, notificationSettings.expiring, notificationSettings.lowStock, notificationSettings.recipes, products]);
 
   useEffect(() => {
     if (visible) {

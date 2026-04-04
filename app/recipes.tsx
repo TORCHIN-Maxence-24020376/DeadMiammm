@@ -4,12 +4,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Typography } from '@/constants/theme';
-import { recipes } from '@/data/mock-data';
+import { useAppSettings } from '@/providers/app-settings-provider';
+import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
+import { buildRecipeSuggestions } from '@/utils/recipes';
 
 export default function RecipesScreen() {
   const router = useRouter();
   const { palette } = useAppTheme();
+  const { products } = useInventory();
+  const { expiringSoonDays } = useAppSettings();
+
+  const recipes = buildRecipeSuggestions(products, { expiringSoonDays });
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}> 
@@ -24,26 +30,28 @@ export default function RecipesScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-        {recipes.map((recipe) => (
-          <View key={recipe.id} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+        {recipes.map((recipe, recipeIndex) => (
+          <View key={`${recipe.id}-${recipeIndex}`} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
             <View style={styles.cardHeader}>
               <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>{recipe.title}</Text>
               <Text style={[Typography.labelMd, { color: palette.accentPrimary }]}>{recipe.time}</Text>
             </View>
 
             <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-              Basé sur les produits proches de la date limite.
+              Basé sur les produits à moins de {expiringSoonDays} jour{expiringSoonDays > 1 ? 's' : ''} de la date limite.
             </Text>
 
             <View style={styles.ingredientsWrap}>
-              {recipe.ingredients.map((ingredient) => (
-                <View key={ingredient} style={[styles.ingredientPill, { backgroundColor: palette.surfaceSoft }]}> 
+              {recipe.ingredients.map((ingredient, ingredientIndex) => (
+                <View key={`${recipe.id}-${ingredientIndex}`} style={[styles.ingredientPill, { backgroundColor: palette.surfaceSoft }]}> 
                   <Text style={[Typography.caption, { color: palette.textPrimary }]}>{ingredient}</Text>
                 </View>
               ))}
             </View>
 
-            <Pressable style={[styles.ctaButton, { backgroundColor: palette.accentPrimary }]}>
+            <Pressable
+              onPress={() => router.push(`/recipe/${recipe.id}`)}
+              style={[styles.ctaButton, { backgroundColor: palette.accentPrimary }]}>
               <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Voir la recette</Text>
             </Pressable>
           </View>

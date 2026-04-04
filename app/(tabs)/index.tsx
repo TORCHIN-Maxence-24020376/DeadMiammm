@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   LayoutAnimation,
   Platform,
@@ -14,30 +14,28 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { NotificationsSheet } from '@/components/sheets/notifications-sheet';
 import { ListMenuSheet } from '@/components/sheets/list-menu-sheet';
+import { NotificationsSheet } from '@/components/sheets/notifications-sheet';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Radii, Typography } from '@/constants/theme';
-import { DisplayMode, products, recipes } from '@/data/mock-data';
+import { DisplayMode, inferLowStock, InventoryProduct, zoneIconMap } from '@/data/inventory';
+import { useAppSettings } from '@/providers/app-settings-provider';
+import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { daysUntil, formatFullDate, zoneLabel } from '@/utils/format';
+import { buildRecipeSuggestions } from '@/utils/recipes';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const zoneIconMap = {
-  frigo: 'refrigerator',
-  congelateur: 'snowflake',
-  sec: 'shippingbox.fill',
-  animalerie: 'pawprint.fill',
-  dph: 'cross.case.fill',
-} as const;
-
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { palette } = useAppTheme();
+  const { palette, resolvedTheme } = useAppTheme();
+  const { products, isHydrating } = useInventory();
+  const { expiringSoonDays, lowStockThreshold } = useAppSettings();
+  const scrollRef = useRef<ScrollView>(null);
 
   const [isListMenuOpen, setIsListMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -51,26 +49,40 @@ export default function HomeScreen() {
     }
 
     const query = searchValue.trim().toLowerCase();
-    return products.filter((product) => product.name.toLowerCase().includes(query));
-  }, [searchValue]);
+    return products.filter((product) => {
+      const haystack = [
+        product.name,
+        product.barcode ?? '',
+        product.category ?? '',
+        product.format ?? '',
+        product.unit,
+        zoneLabel(product.zone),
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [products, searchValue]);
 
   const urgentProducts = useMemo(() => {
     return [...filteredProducts]
-      .filter((product) => daysUntil(product.expiresAt) <= 7)
-      .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt));
-  }, [filteredProducts]);
+      .filter((product) => product.expiresAt && daysUntil(product.expiresAt) <= expiringSoonDays)
+      .sort((a, b) => (a.expiresAt ?? '').localeCompare(b.expiresAt ?? ''));
+  }, [expiringSoonDays, filteredProducts]);
 
   const lowStockProducts = useMemo(() => {
-    return filteredProducts.filter((product) => product.lowStock);
-  }, [filteredProducts]);
+    return filteredProducts.filter((product) => inferLowStock(product, lowStockThreshold));
+  }, [filteredProducts, lowStockThreshold]);
 
   const recentProducts = useMemo(() => {
-    return [...filteredProducts]
-      .sort((a, b) => b.addedAt.localeCompare(a.addedAt))
-      .slice(0, 4);
+    return [...filteredProducts].sort((a, b) => b.addedAt.localeCompare(a.addedAt)).slice(0, 6);
   }, [filteredProducts]);
 
-  const recipeTeaser = useMemo(() => recipes.slice(0, 3), []);
+  const recipeTeaser = useMemo(
+    () => buildRecipeSuggestions(filteredProducts, { expiringSoonDays }).slice(0, 3),
+    [expiringSoonDays, filteredProducts]
+  );
 
   const triggerSelection = () => {
     Haptics.selectionAsync();
@@ -95,12 +107,29 @@ export default function HomeScreen() {
     router.push('/scanner');
   };
 
+  const openProduct = (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/product/${id}`);
+  };
+
+  const openRecipe = (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/recipe/${id}`);
+  };
+
   const openListMenu = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsListMenuOpen(true);
   };
 
-  const onSelectMenuEntry = (slug: 'frigo' | 'congelateur' | 'sec' | 'animalerie' | 'dph' | 'recipes') => {
+  const focusHomeTop = () => {
+    Haptics.selectionAsync();
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  const onSelectMenuEntry = (
+    slug: 'frigo' | 'congelateur' | 'sec' | 'animalerie' | 'dph' | 'autre' | 'recipes' | 'shopping-lists'
+  ) => {
     setIsListMenuOpen(false);
 
     if (slug === 'recipes') {
@@ -108,65 +137,71 @@ export default function HomeScreen() {
       return;
     }
 
+    if (slug === 'shopping-lists') {
+      router.push('/shopping-lists');
+      return;
+    }
+
     router.push(`/category/${slug}`);
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}> 
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.safeArea, { backgroundColor: palette.background }]}> 
+      <View style={[styles.islandTopRow, { paddingTop: insets.top + 6 }]}> 
+        <Pressable
+          style={({ pressed }) => [
+            styles.islandSideButton,
+            {
+              backgroundColor: pressed ? palette.surfacePressed : palette.surfaceSoft,
+              borderColor: palette.border,
+            },
+          ]}
+          onPress={() => router.push('/shopping-lists')}>
+          <IconSymbol name="list.bullet.rectangle.portrait" size={20} color={palette.textPrimary} />
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.dynamicIslandButton,
+            {
+              backgroundColor: pressed
+                ? resolvedTheme === 'dark'
+                  ? '#0B1220'
+                  : '#1B2536'
+                : resolvedTheme === 'dark'
+                  ? '#000000'
+                  : '#111827',
+            },
+          ]}
+          onPress={() => router.push('/profile')}>
+          <IconSymbol name="person.crop.circle" size={18} color="#F8FAFC" />
+          <Text style={[Typography.labelSm, { color: '#F8FAFC' }]}>Profil</Text>
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.islandSideButton,
+            {
+              backgroundColor: pressed ? palette.surfacePressed : palette.surfaceSoft,
+              borderColor: palette.border,
+            },
+          ]}
+          onPress={() => setIsNotificationsOpen(true)}>
+          <IconSymbol name="bell.badge" size={20} color={palette.textPrimary} />
+        </Pressable>
+      </View>
+
       <ScrollView
+        ref={scrollRef}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingBottom: insets.bottom + 150,
-          paddingTop: 4,
+          paddingTop: 12,
           gap: 14,
         }}
         showsVerticalScrollIndicator={false}>
-        <View
-          style={[
-            styles.topShell,
-            {
-              backgroundColor: palette.surfaceSoft,
-              borderColor: palette.border,
-              shadowColor: palette.shadowDark,
-            },
-          ]}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.topIconButton,
-              {
-                backgroundColor: pressed ? palette.surfacePressed : palette.overlay,
-                borderColor: palette.border,
-              },
-            ]}
-            onPress={() => router.push('/shopping-lists')}>
-            <IconSymbol name="list.bullet.rectangle.portrait" size={20} color={palette.textPrimary} />
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.topCenterButton,
-              {
-                backgroundColor: pressed ? palette.surfacePressed : palette.overlay,
-                borderColor: palette.border,
-              },
-            ]}
-            onPress={() => router.push('/profile')}>
-            <IconSymbol name="person.crop.circle" size={22} color={palette.textPrimary} />
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.topIconButton,
-              {
-                backgroundColor: pressed ? palette.surfacePressed : palette.overlay,
-                borderColor: palette.border,
-              },
-            ]}
-            onPress={() => setIsNotificationsOpen(true)}>
-            <IconSymbol name="bell.badge" size={20} color={palette.textPrimary} />
-          </Pressable>
-        </View>
-
         <View
           style={[
             styles.searchShell,
@@ -185,6 +220,12 @@ export default function HomeScreen() {
           />
         </View>
 
+        {isHydrating ? (
+          <View style={[styles.sectionCard, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+            <Text style={[Typography.bodyMd, { color: palette.textSecondary }]}>Chargement de l’inventaire local…</Text>
+          </View>
+        ) : null}
+
         <View
           style={[
             styles.heroCard,
@@ -197,7 +238,9 @@ export default function HomeScreen() {
           <View style={styles.heroHeader}>
             <View>
               <Text style={[Typography.titleLg, { color: palette.textPrimary }]}>Produits bientôt expirés</Text>
-              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Priorité: à consommer</Text>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                Priorité: à consommer ({expiringSoonDays} j)
+              </Text>
             </View>
 
             <View style={[styles.countPill, { backgroundColor: palette.overlay, borderColor: palette.border }]}> 
@@ -207,7 +250,7 @@ export default function HomeScreen() {
 
           <View style={styles.heroList}>
             {urgentProducts.slice(0, 3).map((product) => (
-              <View key={product.id} style={[styles.heroItem, { backgroundColor: palette.surfaceSoft }]}> 
+              <Pressable key={product.id} onPress={() => openProduct(product.id)} style={[styles.heroItem, { backgroundColor: palette.surfaceSoft }]}> 
                 <View style={[styles.heroIconWrap, { backgroundColor: palette.overlay }]}> 
                   <IconSymbol name={zoneIconMap[product.zone]} size={16} color={palette.accentPrimary} />
                 </View>
@@ -215,14 +258,16 @@ export default function HomeScreen() {
                 <View style={styles.heroTextWrap}>
                   <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{product.name}</Text>
                   <Text style={[Typography.caption, { color: palette.textSecondary }]}>
-                    {formatFullDate(product.expiresAt)} • {zoneLabel(product.zone)}
+                    {product.expiresAt ? formatFullDate(product.expiresAt) : 'Pas de date'} • {zoneLabel(product.zone)}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             ))}
 
-            {urgentProducts.length === 0 ? (
-              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Aucun produit urgent trouvé.</Text>
+            {!isHydrating && urgentProducts.length === 0 ? (
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                Aucun produit à moins de {expiringSoonDays} jour{expiringSoonDays > 1 ? 's' : ''}.
+              </Text>
             ) : null}
           </View>
 
@@ -239,6 +284,21 @@ export default function HomeScreen() {
             <IconSymbol name="chevron.right" size={16} color={palette.textInverse} />
           </Pressable>
         </View>
+
+        {!isHydrating && products.length === 0 ? (
+          <View style={[styles.sectionCard, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+            <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Inventaire vide</Text>
+            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Scanne ton premier produit pour alimenter automatiquement toute l’application.</Text>
+            <Pressable
+              onPress={openScanner}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                { backgroundColor: pressed ? palette.accentPrimaryStrong : palette.accentPrimary },
+              ]}>
+              <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Scanner maintenant</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View
           style={[
@@ -262,14 +322,17 @@ export default function HomeScreen() {
 
           {isLowStockExpanded ? (
             <View style={styles.sectionList}>
-              {renderProducts({
-                mode: displayMode,
-                list: lowStockProducts,
-                palette,
-              })}
+            {renderProducts({
+              mode: displayMode,
+              list: lowStockProducts,
+              palette,
+              onOpenProduct: openProduct,
+            })}
             </View>
           ) : (
-            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Touchez pour afficher les produits à réassortir.</Text>
+            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+              Touchez pour afficher les produits avec quantité ≤ {lowStockThreshold}.
+            </Text>
           )}
         </View>
 
@@ -317,6 +380,7 @@ export default function HomeScreen() {
               mode: displayMode,
               list: recentProducts,
               palette,
+              onOpenProduct: openProduct,
             })}
           </View>
         </View>
@@ -337,9 +401,10 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.recipeList}>
-            {recipeTeaser.map((recipe) => (
-              <View
-                key={recipe.id}
+            {recipeTeaser.map((recipe, recipeIndex) => (
+              <Pressable
+                key={`${recipe.id}-${recipeIndex}`}
+                onPress={() => openRecipe(recipe.id)}
                 style={[styles.recipeCard, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
                 <View style={styles.rowBetween}>
                   <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{recipe.title}</Text>
@@ -347,7 +412,7 @@ export default function HomeScreen() {
                 </View>
 
                 <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{recipe.ingredients.join(' • ')}</Text>
-              </View>
+              </Pressable>
             ))}
           </View>
         </View>
@@ -363,7 +428,7 @@ export default function HomeScreen() {
               shadowColor: palette.shadowDark,
             },
           ]}>
-          <Pressable style={[styles.navButton, styles.navButtonActive, { backgroundColor: palette.overlay }]}> 
+          <Pressable onPress={focusHomeTop} style={[styles.navButton, styles.navButtonActive, { backgroundColor: palette.overlay }]}> 
             <IconSymbol name="house.fill" size={20} color={palette.accentPrimary} />
             <Text style={[Typography.labelSm, { color: palette.accentPrimary }]}>Home</Text>
           </Pressable>
@@ -417,10 +482,12 @@ function renderProducts({
   mode,
   list,
   palette,
+  onOpenProduct,
 }: {
   mode: DisplayMode;
-  list: typeof products;
+  list: InventoryProduct[];
   palette: ReturnType<typeof useAppTheme>['palette'];
+  onOpenProduct: (id: string) => void;
 }) {
   if (list.length === 0) {
     return <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Aucun produit à afficher.</Text>;
@@ -430,7 +497,7 @@ function renderProducts({
     return (
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsWrap}>
         {list.map((product) => (
-          <View key={product.id} style={[styles.productCard, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
+          <Pressable key={product.id} onPress={() => onOpenProduct(product.id)} style={[styles.productCard, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
             <View style={styles.rowBetween}>
               <Text style={[Typography.labelLg, { color: palette.textPrimary }]} numberOfLines={1}>
                 {product.name}
@@ -439,8 +506,8 @@ function renderProducts({
             </View>
 
             <Text style={[Typography.caption, { color: palette.textSecondary }]}>{zoneLabel(product.zone)}</Text>
-            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Expire le {formatFullDate(product.expiresAt)}</Text>
-          </View>
+            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Expire le {product.expiresAt ? formatFullDate(product.expiresAt) : '—'}</Text>
+          </Pressable>
         ))}
       </ScrollView>
     );
@@ -449,20 +516,20 @@ function renderProducts({
   return (
     <View style={styles.verticalListWrap}>
       {list.map((product) => (
-        <View key={product.id} style={[styles.productListItem, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
+        <Pressable key={product.id} onPress={() => onOpenProduct(product.id)} style={[styles.productListItem, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
           <View style={styles.rowCenter}>
-            <View style={[styles.smallIcon, { backgroundColor: palette.overlay }]}>
+            <View style={[styles.smallIcon, { backgroundColor: palette.overlay }]}> 
               <IconSymbol name={zoneIconMap[product.zone]} size={14} color={palette.accentPrimary} />
             </View>
 
             <View>
               <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{product.name}</Text>
-              <Text style={[Typography.caption, { color: palette.textSecondary }]}>Expire le {formatFullDate(product.expiresAt)}</Text>
+              <Text style={[Typography.caption, { color: palette.textSecondary }]}>Expire le {product.expiresAt ? formatFullDate(product.expiresAt) : '—'}</Text>
             </View>
           </View>
 
           <Text style={[Typography.caption, { color: palette.textSecondary }]}>{zoneLabel(product.zone)}</Text>
-        </View>
+        </Pressable>
       ))}
     </View>
   );
@@ -472,35 +539,35 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  topShell: {
-    minHeight: 76,
-    borderRadius: 32,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  islandTopRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    elevation: 6,
+    gap: 10,
   },
-  topIconButton: {
-    width: 48,
-    height: 48,
+  islandSideButton: {
+    width: 46,
+    height: 46,
     borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topCenterButton: {
-    width: 68,
-    height: 52,
-    borderRadius: 20,
-    borderWidth: 1,
+  dynamicIslandButton: {
+    minWidth: 128,
+    height: 38,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 4,
   },
   searchShell: {
     minHeight: 56,

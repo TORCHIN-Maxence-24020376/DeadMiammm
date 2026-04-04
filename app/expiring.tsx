@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -5,7 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Typography } from '@/constants/theme';
-import { products } from '@/data/mock-data';
+import { useAppSettings } from '@/providers/app-settings-provider';
+import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { daysUntil, formatFullDate, zoneLabel } from '@/utils/format';
 
@@ -14,12 +16,14 @@ type SortMode = 'chrono' | 'category';
 export default function ExpiringScreen() {
   const router = useRouter();
   const { palette } = useAppTheme();
+  const { products } = useInventory();
+  const { expiringSoonDays } = useAppSettings();
   const [sortMode, setSortMode] = useState<SortMode>('chrono');
 
   const expiringProducts = useMemo(() => {
     const list = products
-      .filter((product) => daysUntil(product.expiresAt) <= 14)
-      .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt));
+      .filter((product) => product.expiresAt && daysUntil(product.expiresAt) <= expiringSoonDays)
+      .sort((a, b) => (a.expiresAt ?? '').localeCompare(b.expiresAt ?? ''));
 
     if (sortMode === 'chrono') {
       return list;
@@ -27,11 +31,16 @@ export default function ExpiringScreen() {
 
     return [...list].sort((a, b) => {
       if (a.zone === b.zone) {
-        return a.expiresAt.localeCompare(b.expiresAt);
+        return (a.expiresAt ?? '').localeCompare(b.expiresAt ?? '');
       }
       return a.zone.localeCompare(b.zone);
     });
-  }, [sortMode]);
+  }, [expiringSoonDays, products, sortMode]);
+
+  const openProduct = (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/product/${id}`);
+  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}> 
@@ -46,6 +55,18 @@ export default function ExpiringScreen() {
       </View>
 
       <View style={styles.content}>
+        <Pressable
+          onPress={() => router.push('/settings/inventory')}
+          style={[styles.thresholdCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <View style={styles.rowTop}>
+            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Seuil actuel</Text>
+            <IconSymbol name="slider.horizontal.3" size={14} color={palette.textSecondary} />
+          </View>
+          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+            Produits affichés si expiration dans {expiringSoonDays} jour{expiringSoonDays > 1 ? 's' : ''} ou moins.
+          </Text>
+        </Pressable>
+
         <View style={[styles.sortWrap, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
           <Pressable
             onPress={() => setSortMode('chrono')}
@@ -61,18 +82,33 @@ export default function ExpiringScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+          {expiringProducts.length === 0 ? (
+            <View style={[styles.row, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+              <Text style={[Typography.bodyMd, { color: palette.textSecondary }]}>Aucun produit proche de la date limite.</Text>
+            </View>
+          ) : null}
+
           {expiringProducts.map((product) => (
-            <View key={product.id} style={[styles.row, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+            <Pressable key={product.id} onPress={() => openProduct(product.id)} style={[styles.row, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+              {product.expiresAt && daysUntil(product.expiresAt) < 0 ? (
+                <View style={[styles.expiredPill, { backgroundColor: palette.danger }]}>
+                  <Text style={[Typography.caption, { color: palette.textInverse }]}>Expiré</Text>
+                </View>
+              ) : null}
               <View style={styles.rowTop}>
                 <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{product.name}</Text>
-                <Text style={[Typography.labelMd, { color: palette.accentPrimary }]}>J-{Math.max(0, daysUntil(product.expiresAt))}</Text>
+                <Text style={[Typography.labelMd, { color: palette.accentPrimary }]}>
+                  {formatDaysBeforeExpiry(product.expiresAt)}
+                </Text>
               </View>
 
               <View style={styles.rowMeta}>
-                <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{formatFullDate(product.expiresAt)}</Text>
+                <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                  {product.expiresAt ? formatFullDate(product.expiresAt) : 'Sans date'}
+                </Text>
                 <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{zoneLabel(product.zone)}</Text>
               </View>
-            </View>
+            </Pressable>
           ))}
         </ScrollView>
       </View>
@@ -128,11 +164,26 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 4,
   },
+  thresholdCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    gap: 4,
+  },
   rowTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 10,
+  },
+  expiredPill: {
+    alignSelf: 'flex-start',
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
   rowMeta: {
     flexDirection: 'row',
@@ -140,3 +191,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+
+function formatDaysBeforeExpiry(expiresAt: string | null) {
+  const remaining = daysUntil(expiresAt);
+  if (!Number.isFinite(remaining)) {
+    return '—';
+  }
+
+  if (remaining < 0) {
+    return `${Math.abs(remaining)} j de retard`;
+  }
+
+  return `J-${remaining}`;
+}

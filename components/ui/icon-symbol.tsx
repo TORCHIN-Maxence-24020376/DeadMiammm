@@ -40,11 +40,15 @@ const MAPPING = {
   'shippingbox.fill': 'inventory',
   'pawprint.fill': 'pets',
   'cross.case.fill': 'medical-services',
+  'bolt.fill': 'flash-on',
+  'bolt.slash.fill': 'flash-off',
+  'trash.fill': 'delete',
   'fork.knife': 'restaurant',
   'clock.badge.exclamationmark': 'schedule',
   sparkles: 'auto-awesome',
   checklist: 'checklist',
   'circle.lefthalf.filled': 'brightness-3',
+  'slider.horizontal.3': 'tune',
 } as IconMapping;
 
 /**

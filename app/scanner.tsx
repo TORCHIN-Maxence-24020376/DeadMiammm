@@ -1,37 +1,71 @@
 import * as Haptics from 'expo-haptics';
+import { CameraView, type BarcodeScanningResult, useCameraPermissions } from 'expo-camera';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Keyboard, KeyboardEvent, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Radii, Typography } from '@/constants/theme';
-import { zoneLabels } from '@/data/mock-data';
+import { NutritionFacts, StorageZone, zoneLabels } from '@/data/inventory';
+import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
+import {
+  fetchProductByBarcode,
+  OpenFoodFactsProduct,
+  searchProductsByText,
+  toOpenFoodFactsUserMessage,
+} from '@/services/open-food-facts';
+import { buildNutritionRows } from '@/utils/nutrition';
 
 type ScanState = 'scanning' | 'fallback' | 'recognized';
-type StorageKey = keyof typeof zoneLabels | 'autre';
+type DraftSource = 'scan' | 'search' | 'manual';
 
-const storageChoices: StorageKey[] = ['frigo', 'congelateur', 'sec', 'dph', 'autre'];
+const storageChoices: StorageZone[] = ['frigo', 'congelateur', 'sec', 'dph', 'autre'];
+const ISO_DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function ScannerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
+  const { addProduct } = useInventory();
 
+  const [permission, requestPermission] = useCameraPermissions();
   const [scanState, setScanState] = useState<ScanState>('scanning');
+  const [source, setSource] = useState<DraftSource>('scan');
+  const [isFetchingBarcode, setIsFetchingBarcode] = useState(false);
+  const [lastScannedBarcode, setLastScannedBarcode] = useState<string | null>(null);
+  const [isTorchEnabled, setIsTorchEnabled] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<OpenFoodFactsProduct[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  const [barcode, setBarcode] = useState<string | undefined>(undefined);
+  const [name, setName] = useState('');
+  const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   const [quantity, setQuantity] = useState(1);
   const [quantityInput, setQuantityInput] = useState('1');
-  const [storage, setStorage] = useState<StorageKey>('frigo');
-  const [expirationDate, setExpirationDate] = useState('2026-04-09');
+  const [unit, setUnit] = useState('unité');
+  const [storage, setStorage] = useState<StorageZone>('sec');
+  const [expirationDate, setExpirationDate] = useState(defaultExpirationDate('sec'));
+  const [formatValue, setFormatValue] = useState('');
+  const [categoryLabel, setCategoryLabel] = useState('');
+  const [nutrition, setNutrition] = useState<NutritionFacts | undefined>(undefined);
   const [isNutritionExpanded, setIsNutritionExpanded] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!permission || permission.granted || !permission.canAskAgain) {
+      return;
+    }
+
+    requestPermission();
+  }, [permission, requestPermission]);
 
   useEffect(() => {
     if (scanState !== 'scanning') {
@@ -45,15 +79,42 @@ export default function ScannerScreen() {
     return () => clearTimeout(timer);
   }, [scanState]);
 
-  const nutritionFacts = useMemo(
-    () => [
-      { label: 'Énergie', value: '182 kcal' },
-      { label: 'Protéines', value: '12 g' },
-      { label: 'Glucides', value: '8 g' },
-      { label: 'Lipides', value: '10 g' },
-    ],
-    []
-  );
+  useEffect(() => {
+    const onKeyboardShow = (event: KeyboardEvent) => {
+      const keyboardHeight = event.endCoordinates.height;
+      setKeyboardInset(Math.max(0, keyboardHeight - insets.bottom));
+    };
+
+    const onKeyboardHide = () => {
+      setKeyboardInset(0);
+    };
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
+    const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [insets.bottom]);
+
+  const nutritionRows = useMemo(() => {
+    return buildNutritionRows(nutrition);
+  }, [nutrition]);
+
+  const expirationRequired = storage !== 'dph';
+
+  const closeScanner = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace('/');
+  };
 
   const updateQuantity = (nextValue: number) => {
     const bounded = Math.max(1, nextValue);
@@ -76,72 +137,270 @@ export default function ScannerScreen() {
     }
   };
 
-  const onRecognized = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  const onBarcodeScanned = async (event: BarcodeScanningResult) => {
+    if (scanState !== 'scanning' || isFetchingBarcode) {
+      return;
+    }
+
+    const scannedBarcode = event.data.trim();
+    if (!scannedBarcode || scannedBarcode === lastScannedBarcode) {
+      return;
+    }
+
+    setLastScannedBarcode(scannedBarcode);
+    setIsFetchingBarcode(true);
+    setSearchError(null);
+
+    try {
+      const product = await fetchProductByBarcode(scannedBarcode);
+      if (!product) {
+        setScanState('fallback');
+        return;
+      }
+
+      applyRecognizedProduct(product, 'scan');
+      setScanState('recognized');
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      setSearchError(toOpenFoodFactsUserMessage(error) ?? 'Impossible de récupérer le produit pour le moment.');
+      setScanState('fallback');
+    } finally {
+      setIsFetchingBarcode(false);
+    }
+  };
+
+  const onSearchFallback = async () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError(null);
+
+    try {
+      const results = await searchProductsByText(query);
+      setSearchResults(results);
+      if (results.length === 0) {
+        setSearchError('Aucun résultat trouvé.');
+      }
+    } catch (error) {
+      setSearchError(toOpenFoodFactsUserMessage(error) ?? 'La recherche OpenFoodFacts est indisponible.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const onPickSearchResult = async (product: OpenFoodFactsProduct) => {
+    applyRecognizedProduct(product, 'search');
+    setScanState('recognized');
+    await Haptics.selectionAsync();
+  };
+
+  const onOpenManualAdd = () => {
+    setSource('manual');
+    setBarcode(undefined);
+    setName('');
+    setImageUrl(undefined);
+    setIsImageModalOpen(false);
+    setQuantity(1);
+    setQuantityInput('1');
+    setUnit('unité');
+    setStorage('sec');
+    setExpirationDate(defaultExpirationDate('sec'));
+    setFormatValue('');
+    setCategoryLabel('');
+    setNutrition(undefined);
+    setFormError(null);
     setScanState('recognized');
   };
 
-  const onAddProduct = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.back();
+  const onAddProduct = async () => {
+    const trimmedName = name.trim();
+    const normalizedExpiration = normalizeExpirationDate(expirationDate);
+
+    if (!trimmedName) {
+      setFormError('Le nom du produit est obligatoire.');
+      return;
+    }
+
+    if (expirationRequired && !normalizedExpiration) {
+      setFormError('La date d’expiration doit être valide (YYYY-MM-DD).');
+      return;
+    }
+
+    if (!expirationRequired && expirationDate.trim() && !normalizedExpiration) {
+      setFormError('La date d’expiration est invalide. Utilise le format YYYY-MM-DD.');
+      return;
+    }
+
+    setFormError(null);
+
+    await addProduct({
+      name: trimmedName,
+      barcode,
+      imageUrl,
+      zone: storage,
+      expiresAt: normalizedExpiration,
+      quantity,
+      unit,
+      category: categoryLabel || undefined,
+      format: formatValue || undefined,
+      nutrition,
+      source,
+    });
+
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    closeScanner();
+  };
+
+  const resetScan = () => {
+    setScanState('scanning');
+    setLastScannedBarcode(null);
+    setSearchError(null);
+    setSearchResults([]);
+    setIsImageModalOpen(false);
+  };
+
+  const toggleTorch = () => {
+    setIsTorchEnabled((previous) => !previous);
+    Haptics.selectionAsync();
+  };
+
+  const openImageModal = () => {
+    if (!imageUrl) {
+      return;
+    }
+
+    setIsImageModalOpen(true);
+    Haptics.selectionAsync();
+  };
+
+  const closeImageModal = () => {
+    setIsImageModalOpen(false);
   };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}> 
       <View style={[styles.header, { borderColor: palette.border }]}> 
-        <Pressable onPress={() => router.back()} style={[styles.backButton, { backgroundColor: palette.surfaceSoft }]}> 
+        <Pressable onPress={closeScanner} style={[styles.backButton, { backgroundColor: palette.surfaceSoft }]}> 
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
         <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Scanner</Text>
 
-        <View style={styles.headerSpacer} />
+        <Pressable onPress={resetScan} style={[styles.backButton, { backgroundColor: palette.surfaceSoft }]}> 
+          <IconSymbol name="camera.viewfinder" size={18} color={palette.textPrimary} />
+        </Pressable>
       </View>
 
-      <View style={[styles.cameraFrame, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
-        <View style={styles.cameraCornersWrap}>
-          <View style={[styles.corner, styles.cornerTopLeft, { borderColor: palette.accentPrimary }]} />
-          <View style={[styles.corner, styles.cornerTopRight, { borderColor: palette.accentPrimary }]} />
-          <View style={[styles.corner, styles.cornerBottomLeft, { borderColor: palette.accentPrimary }]} />
-          <View style={[styles.corner, styles.cornerBottomRight, { borderColor: palette.accentPrimary }]} />
-        </View>
+      <View style={[styles.cameraFrame, { borderColor: palette.border }]}> 
+        {permission?.granted ? (
+          <CameraView
+            style={StyleSheet.absoluteFillObject}
+            facing="back"
+            enableTorch={isTorchEnabled}
+            barcodeScannerSettings={{
+              barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39'],
+            }}
+            onBarcodeScanned={scanState === 'scanning' ? onBarcodeScanned : undefined}
+          />
+        ) : (
+          <View style={[StyleSheet.absoluteFillObject, styles.cameraPermissionFallback, { backgroundColor: palette.surface }]}> 
+            <IconSymbol name="camera.viewfinder" size={40} color={palette.textSecondary} />
+            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Autorise la caméra pour scanner.</Text>
+            <Pressable onPress={requestPermission} style={[styles.permissionButton, { backgroundColor: palette.accentPrimary }]}> 
+              <Text style={[Typography.labelMd, { color: palette.textInverse }]}>Autoriser la caméra</Text>
+            </Pressable>
+          </View>
+        )}
 
-        <IconSymbol name="camera.viewfinder" size={62} color={palette.textSecondary} />
-        <Text style={[Typography.bodyMd, { color: palette.textSecondary }]}>Caméra active (prototype visuel)</Text>
+        <View style={[styles.cameraOverlay, { paddingBottom: 14 + keyboardInset }]}>
+          {permission?.granted ? (
+            <Pressable
+              onPress={toggleTorch}
+              style={[
+                styles.flashToggleButton,
+                {
+                  backgroundColor: isTorchEnabled ? palette.accentPrimary : palette.overlay,
+                  borderColor: palette.border,
+                },
+              ]}>
+              <IconSymbol
+                name={isTorchEnabled ? 'bolt.fill' : 'bolt.slash.fill'}
+                size={16}
+                color={isTorchEnabled ? palette.textInverse : palette.textPrimary}
+              />
+              <Text
+                style={[
+                  Typography.labelSm,
+                  {
+                    color: isTorchEnabled ? palette.textInverse : palette.textPrimary,
+                  },
+                ]}>
+                Flash
+              </Text>
+            </Pressable>
+          ) : null}
 
-        {scanState === 'scanning' ? (
-          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Analyse du produit en cours...</Text>
-        ) : null}
+          <View style={styles.cameraCornersWrap}>
+            <View style={[styles.corner, styles.cornerTopLeft, { borderColor: palette.accentPrimary }]} />
+            <View style={[styles.corner, styles.cornerTopRight, { borderColor: palette.accentPrimary }]} />
+            <View style={[styles.corner, styles.cornerBottomLeft, { borderColor: palette.accentPrimary }]} />
+            <View style={[styles.corner, styles.cornerBottomRight, { borderColor: palette.accentPrimary }]} />
+          </View>
 
-        {scanState !== 'recognized' ? (
-          <Pressable
-            onPress={onRecognized}
-            style={({ pressed }) => [
-              styles.recognizeButton,
-              {
-                backgroundColor: pressed ? palette.accentPrimaryStrong : palette.accentPrimary,
-              },
-            ]}>
-            <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Simuler produit reconnu</Text>
-          </Pressable>
-        ) : null}
+          <View style={[styles.scanStatusBadge, { backgroundColor: palette.overlay, borderColor: palette.border }]}> 
+            <Text style={[Typography.labelMd, { color: palette.textPrimary }]}> 
+              {isFetchingBarcode ? 'Produit détecté, récupération…' : scanState === 'scanning' ? 'Analyse en cours…' : 'Mode fallback'}
+            </Text>
+          </View>
 
-        {scanState === 'fallback' ? (
-          <View style={[styles.fallbackPanel, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
-            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Produit non reconnu</Text>
-            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Choisissez une option de fallback.</Text>
+          {scanState === 'fallback' ? (
+            <View style={[styles.fallbackPanel, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+              <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Produit non reconnu</Text>
 
-            <View style={styles.fallbackActions}>
-              <Pressable style={[styles.secondaryAction, { borderColor: palette.border }]}>
-                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Recherche produit</Text>
-              </Pressable>
+              <View style={[styles.searchInputWrap, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Recherche OpenFoodFacts"
+                  placeholderTextColor={palette.textTertiary}
+                  style={[styles.searchInput, Typography.bodySm, { color: palette.textPrimary }]}
+                  autoCapitalize="none"
+                />
+                <Pressable onPress={onSearchFallback}>
+                  <IconSymbol name="magnifyingglass" size={18} color={palette.accentPrimary} />
+                </Pressable>
+              </View>
 
-              <Pressable style={[styles.secondaryAction, { borderColor: palette.border }]}>
+              {isSearching ? <Text style={[Typography.caption, { color: palette.textSecondary }]}>Recherche…</Text> : null}
+              {searchError ? <Text style={[Typography.caption, { color: palette.warning }]}>{searchError}</Text> : null}
+
+              {searchResults.length > 0 ? (
+                <ScrollView
+                  style={styles.searchResultsList}
+                  contentContainerStyle={styles.searchResultsContent}
+                  keyboardDismissMode="on-drag"
+                  keyboardShouldPersistTaps="handled">
+                  {searchResults.map((result) => (
+                    <Pressable
+                      key={result.barcode}
+                      onPress={() => onPickSearchResult(result)}
+                      style={[styles.searchResultRow, { borderColor: palette.border }]}> 
+                      <Text style={[Typography.bodySm, { color: palette.textPrimary }]} numberOfLines={1}>{result.name}</Text>
+                      <Text style={[Typography.caption, { color: palette.textSecondary }]}>{result.barcode}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+
+              <Pressable onPress={onOpenManualAdd} style={[styles.secondaryAction, { borderColor: palette.border }]}> 
                 <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Ajout manuel</Text>
               </Pressable>
             </View>
-          </View>
-        ) : null}
+          ) : null}
+        </View>
       </View>
 
       {scanState === 'recognized' ? (
@@ -152,17 +411,50 @@ export default function ScannerScreen() {
               backgroundColor: palette.surface,
               borderColor: palette.border,
               paddingBottom: insets.bottom + 16,
+              bottom: keyboardInset,
             },
           ]}>
           <View style={[styles.sheetHandle, { backgroundColor: palette.textTertiary }]} />
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.quickSheetContent}>
-            <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Yaourt grec nature</Text>
-            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Ajout rapide depuis scan</Text>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.quickSheetContent}
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled">
+            <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Fiche rapide produit</Text>
 
-            <View style={[styles.imageMock, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
-              <IconSymbol name="photo" size={42} color={palette.textTertiary} />
+            <View style={styles.fieldBlock}>
+              <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Nom</Text>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="Nom du produit"
+                placeholderTextColor={palette.textTertiary}
+                style={[
+                  styles.textField,
+                  Typography.bodyMd,
+                  {
+                    color: palette.textPrimary,
+                    borderColor: palette.border,
+                    backgroundColor: palette.surfaceSoft,
+                  },
+                ]}
+              />
             </View>
+
+            {imageUrl ? (
+              <Pressable onPress={openImageModal} style={styles.productImagePressable}>
+                <Image source={{ uri: imageUrl }} style={[styles.productImage, { borderColor: palette.border }]} contentFit="cover" />
+                <View style={[styles.imageHintPill, { backgroundColor: palette.overlay, borderColor: palette.border }]}>
+                  <IconSymbol name="magnifyingglass" size={12} color={palette.textPrimary} />
+                  <Text style={[Typography.caption, { color: palette.textPrimary }]}>Agrandir</Text>
+                </View>
+              </Pressable>
+            ) : (
+              <View style={[styles.imageMock, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
+                <IconSymbol name="photo" size={36} color={palette.textTertiary} />
+              </View>
+            )}
 
             <View style={styles.fieldBlock}>
               <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Quantité</Text>
@@ -190,6 +482,10 @@ export default function ScannerScreen() {
                   <IconSymbol name="plus" size={14} color={palette.textPrimary} />
                 </Pressable>
               </View>
+              <Text style={[Typography.caption, { color: palette.textSecondary }]}>Unité détectée: {unit}</Text>
+              <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+                Le poids/volume (ex: 150 g) reste dans le champ Format / volume.
+              </Text>
             </View>
 
             <View style={styles.fieldBlock}>
@@ -198,7 +494,17 @@ export default function ScannerScreen() {
                 {storageChoices.map((choice) => (
                   <Pressable
                     key={choice}
-                    onPress={() => setStorage(choice)}
+                    onPress={() => {
+                      setStorage(choice);
+                      if (choice === 'dph') {
+                        setExpirationDate('');
+                        return;
+                      }
+
+                      if (!normalizeExpirationDate(expirationDate)) {
+                        setExpirationDate(defaultExpirationDate(choice));
+                      }
+                    }}
                     style={[
                       styles.storageChoice,
                       {
@@ -213,7 +519,7 @@ export default function ScannerScreen() {
                           color: storage === choice ? palette.textInverse : palette.textPrimary,
                         },
                       ]}>
-                      {choice === 'autre' ? 'Autre' : zoneLabels[choice]}
+                      {zoneLabels[choice]}
                     </Text>
                   </Pressable>
                 ))}
@@ -221,12 +527,14 @@ export default function ScannerScreen() {
             </View>
 
             <View style={styles.fieldBlock}>
-              <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Date d’expiration</Text>
+              <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Date d’expiration {expirationRequired ? '(obligatoire)' : '(optionnelle)'}</Text>
               <TextInput
                 value={expirationDate}
                 onChangeText={setExpirationDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={palette.textTertiary}
                 style={[
-                  styles.expirationInput,
+                  styles.textField,
                   Typography.bodyMd,
                   {
                     color: palette.textPrimary,
@@ -235,6 +543,16 @@ export default function ScannerScreen() {
                   },
                 ]}
               />
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Format / volume</Text>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{formatValue || 'Non renseigné'}</Text>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Catégorie</Text>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{categoryLabel || 'Non renseignée'}</Text>
             </View>
 
             <View style={styles.fieldBlock}>
@@ -249,15 +567,24 @@ export default function ScannerScreen() {
 
               {isNutritionExpanded ? (
                 <View style={[styles.nutritionPanel, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
-                  {nutritionFacts.map((item) => (
-                    <View key={item.label} style={styles.nutritionRow}>
-                      <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{item.label}</Text>
-                      <Text style={[Typography.bodySm, { color: palette.textPrimary }]}>{item.value}</Text>
-                    </View>
-                  ))}
+                  {nutritionRows.length === 0 ? (
+                    <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Aucune donnée nutritionnelle disponible.</Text>
+                  ) : (
+                    <>
+                      <Text style={[Typography.caption, { color: palette.textSecondary }]}>Valeurs pour 100 g / 100 ml</Text>
+                      {nutritionRows.map((item) => (
+                        <View key={item.label} style={styles.nutritionRow}>
+                          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{item.label}</Text>
+                          <Text style={[Typography.bodySm, { color: palette.textPrimary }]}>{item.value}</Text>
+                        </View>
+                      ))}
+                    </>
+                  )}
                 </View>
               ) : null}
             </View>
+
+            {formError ? <Text style={[Typography.caption, { color: palette.danger }]}>{formError}</Text> : null}
 
             <Pressable
               onPress={onAddProduct}
@@ -272,8 +599,138 @@ export default function ScannerScreen() {
           </ScrollView>
         </View>
       ) : null}
+
+      <Modal visible={isImageModalOpen} transparent animationType="fade" onRequestClose={closeImageModal}>
+        <View style={[styles.imageModalBackdrop, { backgroundColor: 'rgba(0, 0, 0, 0.9)' }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeImageModal} />
+
+          <View style={[styles.imageModalHeader, { paddingTop: insets.top + 8 }]}>
+            <Pressable
+              onPress={closeImageModal}
+              style={[styles.imageModalCloseButton, { backgroundColor: 'rgba(255, 255, 255, 0.22)' }]}>
+              <IconSymbol name="xmark" size={18} color="#FFFFFF" />
+            </Pressable>
+          </View>
+
+          {imageUrl ? (
+            <View style={styles.imageModalBody}>
+              <Image source={{ uri: imageUrl }} style={styles.imageModalImage} contentFit="contain" />
+            </View>
+          ) : null}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
+
+  function applyRecognizedProduct(product: OpenFoodFactsProduct, nextSource: DraftSource) {
+    setSource(nextSource);
+    setBarcode(product.barcode);
+    setName(product.name);
+    setImageUrl(product.imageUrl);
+
+    const nextZone = product.suggestedZone;
+    setStorage(nextZone);
+    setExpirationDate(defaultExpirationDate(nextZone));
+
+    const purchaseDetails = inferPurchaseDetails(product);
+    setQuantity(purchaseDetails.quantity);
+    setQuantityInput(String(purchaseDetails.quantity));
+    setUnit(purchaseDetails.unit);
+
+    setFormatValue(product.quantityLabel ?? '');
+    setCategoryLabel(product.categoryLabel ?? '');
+    setNutrition(product.nutrition);
+    setFormError(null);
+  }
+}
+
+function defaultExpirationDate(zone: StorageZone) {
+  if (zone === 'dph') {
+    return '';
+  }
+
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return toLocalDateKey(date);
+}
+
+function normalizeExpirationDate(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (ISO_DATE_ONLY_REGEX.test(trimmed)) {
+    return trimmed;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return toLocalDateKey(parsed);
+}
+
+function toLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function inferPurchaseDetails(product: Pick<OpenFoodFactsProduct, 'name' | 'quantityLabel' | 'categories' | 'categoryLabel'>) {
+  const context = `${product.name} ${product.categoryLabel ?? ''} ${product.categories.join(' ')}`.toLowerCase();
+  const packCount = extractPackCount(product.quantityLabel);
+
+  if (isChocolateTablet(context)) {
+    return {
+      quantity: packCount ?? 1,
+      unit: 'tablette',
+    };
+  }
+
+  return {
+    quantity: packCount ?? 1,
+    unit: 'unité',
+  };
+}
+
+function isChocolateTablet(context: string) {
+  return matchesAny(context, ['chocolat', 'chocolate', 'tablette', 'tablettes']);
+}
+
+function extractPackCount(quantityLabel?: string) {
+  if (!quantityLabel) {
+    return null;
+  }
+
+  const normalized = quantityLabel.toLowerCase();
+  const patterns = [
+    /(\d{1,2})\s*[x×]\s*\d/,
+    /\b(?:lot|pack|bo[iî]te|sachet)\s*(?:de)?\s*(\d{1,2})\b/,
+    /(\d{1,2})\s*(?:pi[eè]ces?|pcs?|unit[eé]s?|tablettes?)\b/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (!match) {
+      continue;
+    }
+
+    const parsed = Number(match[1]);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      continue;
+    }
+
+    return Math.min(parsed, 99);
+  }
+
+  return null;
+}
+
+function matchesAny(text: string, candidates: string[]) {
+  return candidates.some((candidate) => text.includes(candidate));
 }
 
 const styles = StyleSheet.create({
@@ -295,23 +752,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerSpacer: {
-    width: 34,
-  },
   cameraFrame: {
     flex: 1,
     margin: 16,
     borderRadius: 28,
     borderWidth: 1,
+    overflow: 'hidden',
+  },
+  cameraPermissionFallback: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    padding: 20,
+    gap: 10,
+    paddingHorizontal: 16,
+  },
+  permissionButton: {
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+    padding: 14,
+  },
+  flashToggleButton: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    minHeight: 34,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   cameraCornersWrap: {
-    position: 'absolute',
-    width: '84%',
-    height: '62%',
+    marginTop: 44,
+    alignSelf: 'center',
+    width: '86%',
+    height: '55%',
   },
   corner: {
     position: 'absolute',
@@ -344,27 +827,48 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
     borderLeftWidth: 0,
   },
-  recognizeButton: {
-    height: 44,
+  scanStatusBadge: {
     borderRadius: 14,
-    paddingHorizontal: 16,
+    borderWidth: 1,
+    minHeight: 36,
+    paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'center',
   },
   fallbackPanel: {
-    width: '100%',
     borderRadius: 18,
     borderWidth: 1,
     padding: 12,
     gap: 10,
   },
-  fallbackActions: {
+  searchInputWrap: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
-  secondaryAction: {
+  searchInput: {
     flex: 1,
-    height: 40,
+    minHeight: 40,
+  },
+  searchResultsList: {
+    maxHeight: 150,
+  },
+  searchResultsContent: {
+    gap: 6,
+  },
+  searchResultRow: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  secondaryAction: {
+    height: 38,
     borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
@@ -375,7 +879,7 @@ const styles = StyleSheet.create({
     left: 10,
     right: 10,
     bottom: 0,
-    top: '33%',
+    top: '20%',
     borderTopLeftRadius: 34,
     borderTopRightRadius: 34,
     borderWidth: 1,
@@ -397,15 +901,43 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingBottom: 8,
   },
+  fieldBlock: {
+    gap: 8,
+  },
+  textField: {
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  productImage: {
+    width: '100%',
+    height: 130,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  productImagePressable: {
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  imageHintPill: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   imageMock: {
     height: 110,
     borderRadius: 18,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  fieldBlock: {
-    gap: 8,
   },
   quantityRow: {
     flexDirection: 'row',
@@ -439,11 +971,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
-  expirationInput: {
-    height: 42,
+  infoRow: {
+    minHeight: 34,
     borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
   },
   nutritionToggle: {
     height: 36,
@@ -468,5 +1002,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
+  },
+  imageModalBackdrop: {
+    flex: 1,
+  },
+  imageModalHeader: {
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+  },
+  imageModalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageModalBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingBottom: 18,
+  },
+  imageModalImage: {
+    width: '100%',
+    height: '86%',
   },
 });

@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -5,28 +6,27 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Typography } from '@/constants/theme';
-import { products, StorageZone, zoneLabels } from '@/data/mock-data';
+import { StorageZone, zoneIconMap, zoneLabels } from '@/data/inventory';
+import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { formatFullDate } from '@/utils/format';
-
-const icons: Record<StorageZone, string> = {
-  frigo: 'refrigerator',
-  congelateur: 'snowflake',
-  sec: 'shippingbox.fill',
-  animalerie: 'pawprint.fill',
-  dph: 'cross.case.fill',
-};
 
 export default function CategoryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ slug?: string }>();
   const { palette } = useAppTheme();
+  const { products } = useInventory();
 
-  const zone = (params.slug ?? 'frigo') as StorageZone;
+  const zone = isStorageZone(params.slug) ? params.slug : 'frigo';
 
   const productsInZone = useMemo(() => {
     return products.filter((product) => product.zone === zone);
-  }, [zone]);
+  }, [products, zone]);
+
+  const openProduct = (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/product/${id}`);
+  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}> 
@@ -36,7 +36,7 @@ export default function CategoryScreen() {
         </Pressable>
 
         <View style={styles.headerTitle}>
-          <IconSymbol name={icons[zone] as any} size={18} color={palette.accentPrimary} />
+          <IconSymbol name={zoneIconMap[zone]} size={18} color={palette.accentPrimary} />
           <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>{zoneLabels[zone]}</Text>
         </View>
 
@@ -44,16 +44,26 @@ export default function CategoryScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {productsInZone.map((product) => (
-          <View key={product.id} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
-            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{product.name}</Text>
-            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Expire le {formatFullDate(product.expiresAt)}</Text>
-            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Quantité: {product.quantity} {product.unit}</Text>
+        {productsInZone.length === 0 ? (
+          <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+            <Text style={[Typography.bodyMd, { color: palette.textSecondary }]}>Aucun produit dans cette zone.</Text>
           </View>
+        ) : null}
+
+        {productsInZone.map((product) => (
+          <Pressable key={product.id} onPress={() => openProduct(product.id)} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{product.name}</Text>
+            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Expire le {product.expiresAt ? formatFullDate(product.expiresAt) : 'Sans date'}</Text>
+            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Quantité: {product.quantity} {product.unit}</Text>
+          </Pressable>
         ))}
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function isStorageZone(value: string | undefined): value is StorageZone {
+  return value === 'frigo' || value === 'congelateur' || value === 'sec' || value === 'animalerie' || value === 'dph' || value === 'autre';
 }
 
 const styles = StyleSheet.create({

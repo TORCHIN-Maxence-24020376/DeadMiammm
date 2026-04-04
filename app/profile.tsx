@@ -7,9 +7,16 @@ import { Typography } from '@/constants/theme';
 import { useAppTheme } from '@/providers/theme-provider';
 
 const actions = [
+  {
+    key: 'inventory',
+    title: 'Inventaire intelligent',
+    subtitle: 'Seuils expiration et stock faible',
+    route: '/settings/inventory',
+    icon: 'slider.horizontal.3',
+  },
   { key: 'theme', title: 'Réglage thème', subtitle: 'Auto, clair ou sombre', route: '/settings/theme', icon: 'circle.lefthalf.filled' },
-  { key: 'notif', title: 'Préférences notifications', subtitle: 'Rappels et alertes produits', route: null, icon: 'bell.badge' },
-  { key: 'account', title: 'Compte et profil', subtitle: 'Informations personnelles', route: null, icon: 'person.crop.circle' },
+  { key: 'notif', title: 'Préférences notifications', subtitle: 'Rappels et alertes produits', route: '/settings/notifications', icon: 'bell.badge' },
+  { key: 'account', title: 'Compte et profil', subtitle: 'Informations personnelles', route: '/settings/account', icon: 'person.crop.circle' },
 ] as const;
 
 export default function ProfileScreen() {
@@ -33,9 +40,7 @@ export default function ProfileScreen() {
           <Pressable
             key={action.key}
             onPress={() => {
-              if (action.route) {
-                router.push(action.route);
-              }
+              router.push(action.route);
             }}
             style={({ pressed }) => [
               styles.row,
