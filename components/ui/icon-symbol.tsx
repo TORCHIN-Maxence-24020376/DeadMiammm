@@ -49,6 +49,7 @@ const MAPPING = {
   checklist: 'checklist',
   'circle.lefthalf.filled': 'brightness-3',
   'slider.horizontal.3': 'tune',
+  'cart.badge.plus': 'add-shopping-cart',
 } as IconMapping;
 
 /**
