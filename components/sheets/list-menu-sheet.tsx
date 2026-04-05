@@ -30,7 +30,7 @@ const entries = [
   { slug: 'dph', title: 'DPH', icon: 'cross.case.fill' },
   { slug: 'autre', title: 'Autre', icon: 'shippingbox.fill' },
   { slug: 'recipes', title: 'Recettes', icon: 'fork.knife' },
-  { slug: 'shopping-lists', title: 'Liste de courses', icon: 'cart.fill' },
+  { slug: 'shopping-lists', title: 'Liste de courses', icon: 'note.text' },
 ] as const;
 
 export function ListMenuSheet({ visible, palette, onClose, onSelect }: ListMenuSheetProps) {
@@ -140,7 +140,7 @@ export function ListMenuSheet({ visible, palette, onClose, onSelect }: ListMenuS
                     ]}>
                     <IconSymbol name={entry.icon} size={26} color={palette.accentPrimary} />
                   </View>
-                  <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>{entry.title}</Text>
+                  <Text style={[Typography.labelMd, { color: palette.textPrimary, textAlign: 'center' }]}>{entry.title}</Text>
                 </>
               )}
             </Pressable>
