@@ -620,104 +620,112 @@ export default function ShoppingListsScreen() {
                         opacity: selectedList.status === 'active' ? 1 : 0.84,
                       },
                     ]}>
-                    <View style={styles.itemStateActions}>
+
+                    {/* Bloc 1 — état : trouvé / non trouvé */}
+                    <View style={[styles.itemStateRow, { borderBottomColor: palette.border }]}>
                       <Pressable
                         onPress={() => togglePurchased(item)}
                         disabled={selectedList.status !== 'active'}
                         style={({ pressed }) => [
-                          styles.itemStateButton,
+                          styles.itemStateChip,
                           {
-                            backgroundColor:
-                              item.isChecked
-                                ? palette.success
-                                : pressed
-                                  ? palette.surfacePressed
-                                  : palette.surface,
+                            backgroundColor: item.isChecked
+                              ? palette.success
+                              : pressed ? palette.surfacePressed : palette.surface,
                             borderColor: item.isChecked ? palette.success : palette.border,
                             opacity: selectedList.status === 'active' ? 1 : 0.45,
                           },
                         ]}>
-                        <IconSymbol name={item.isChecked ? 'checkmark.circle.fill' : 'circle'} size={18} color={item.isChecked ? palette.textInverse : palette.textTertiary} />
+                        <IconSymbol name={item.isChecked ? 'checkmark.circle.fill' : 'circle'} size={15} color={item.isChecked ? palette.textInverse : palette.textTertiary} />
+                        <Text style={[Typography.labelSm, { color: item.isChecked ? palette.textInverse : palette.textTertiary }]}>
+                          Trouvé
+                        </Text>
                       </Pressable>
 
                       <Pressable
                         onPress={() => toggleUnavailable(item)}
                         disabled={selectedList.status !== 'active'}
                         style={({ pressed }) => [
-                          styles.itemStateButton,
+                          styles.itemStateChip,
                           {
-                            backgroundColor:
-                              item.isUnavailable
-                                ? palette.danger
-                                : pressed
-                                  ? palette.surfacePressed
-                                  : palette.surface,
+                            backgroundColor: item.isUnavailable
+                              ? palette.danger
+                              : pressed ? palette.surfacePressed : palette.surface,
                             borderColor: item.isUnavailable ? palette.danger : palette.border,
                             opacity: selectedList.status === 'active' ? 1 : 0.45,
                           },
                         ]}>
-                        <IconSymbol name="xmark" size={14} color={item.isUnavailable ? palette.textInverse : palette.danger} />
+                        <IconSymbol name="xmark" size={13} color={item.isUnavailable ? palette.textInverse : palette.danger} />
+                        <Text style={[Typography.labelSm, { color: item.isUnavailable ? palette.textInverse : palette.danger }]}>
+                          Non trouvé
+                        </Text>
                       </Pressable>
                     </View>
 
-                    <ItemImage
-                      item={item}
-                      imageUrl={
-                        item.linkedProductId
-                          ? productById.get(item.linkedProductId)?.imageUrl
-                          : (offImageByItemId.get(item.id) ?? undefined)
-                      }
-                      palette={palette}
-                    />
-
-                    <View style={styles.itemTextWrap}>
-                      <Text
-                        style={[
-                          Typography.bodyMd,
-                          {
-                            color: item.isUnavailable
-                              ? palette.danger
-                              : item.isChecked
-                                ? palette.textSecondary
-                                : palette.textPrimary,
-                            textDecorationLine: item.isChecked || item.isUnavailable ? 'line-through' : 'none',
-                          },
-                        ]}>
-                        {item.name}
-                      </Text>
-                      <Text style={[Typography.caption, { color: palette.textSecondary }]}>
-                        {item.isUnavailable
-                          ? `Indisponible en rayon • ${formatQuantity(item.quantity)} ${item.unit}`
-                          : `${formatQuantity(item.quantity)} ${item.unit}`}
-                      </Text>
+                    {/* Bloc 2 — image + texte */}
+                    <View style={styles.itemContentRow}>
+                      <ItemImage
+                        item={item}
+                        imageUrl={
+                          item.linkedProductId
+                            ? productById.get(item.linkedProductId)?.imageUrl
+                            : (offImageByItemId.get(item.id) ?? undefined)
+                        }
+                        palette={palette}
+                        size={64}
+                      />
+                      <View style={styles.itemTextWrap}>
+                        <Text
+                          style={[
+                            Typography.labelLg,
+                            {
+                              color: item.isUnavailable
+                                ? palette.danger
+                                : item.isChecked
+                                  ? palette.textSecondary
+                                  : palette.textPrimary,
+                              textDecorationLine: item.isChecked || item.isUnavailable ? 'line-through' : 'none',
+                            },
+                          ]}
+                          numberOfLines={2}>
+                          {item.name}
+                        </Text>
+                        <Text style={[Typography.bodyMd, { color: item.isUnavailable ? palette.danger : palette.textSecondary }]}>
+                          {item.isUnavailable
+                            ? `Indisponible • ${formatQuantity(item.quantity)} ${item.unit}`
+                            : `${formatQuantity(item.quantity)} ${item.unit}`}
+                        </Text>
+                      </View>
                     </View>
 
-                    <View style={styles.inlineActions}>
+                    {/* Bloc 3 — contrôles quantité */}
+                    <View style={[styles.itemQtyRow, { borderTopColor: palette.border }]}>
                       {item.quantity > 1 && (
                         <Pressable
                           onPress={() => shiftItemQuantityInEdit(item, -1)}
                           disabled={selectedList.status !== 'active'}
-                          style={[styles.inlineActionButton, { backgroundColor: palette.surfaceSoft, borderColor: palette.border, opacity: selectedList.status === 'active' ? 1 : 0.45 }]}>
-                          <IconSymbol name="minus" size={12} color={palette.textPrimary} />
+                          style={[styles.inlineActionButton, { backgroundColor: palette.surface, borderColor: palette.border, opacity: selectedList.status === 'active' ? 1 : 0.45 }]}>
+                          <IconSymbol name="minus" size={14} color={palette.textPrimary} />
                         </Pressable>
                       )}
-                      <View style={[styles.inlineQtyBadge, { backgroundColor: palette.overlay, borderColor: palette.border }]}>
-                        <Text style={[Typography.caption, { color: palette.textPrimary }]}>
+                      <View style={[styles.inlineQtyBadge, { backgroundColor: palette.overlay, borderColor: palette.border, flex: 1 }]}>
+                        <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>
                           {formatQuantity(item.quantity)} {item.unit}
                         </Text>
                       </View>
                       <Pressable
                         onPress={() => shiftItemQuantityInEdit(item, 1)}
                         disabled={selectedList.status !== 'active'}
-                        style={[styles.inlineActionButton, { backgroundColor: palette.surfaceSoft, borderColor: palette.border, opacity: selectedList.status === 'active' ? 1 : 0.45 }]}>
-                        <IconSymbol name="plus" size={12} color={palette.textPrimary} />
+                        style={[styles.inlineActionButton, { backgroundColor: palette.surface, borderColor: palette.border, opacity: selectedList.status === 'active' ? 1 : 0.45 }]}>
+                        <IconSymbol name="plus" size={14} color={palette.textPrimary} />
                       </Pressable>
                       <Pressable
                         onPress={() => removeItemInEdit(item)}
-                        style={[styles.inlineActionButton, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
-                        <IconSymbol name="trash.fill" size={12} color={palette.danger} />
+                        style={[styles.inlineActionButton, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+                        <IconSymbol name="trash.fill" size={14} color={palette.danger} />
                       </Pressable>
                     </View>
+
                   </View>
                 ))}
               </View>
@@ -955,18 +963,20 @@ export default function ShoppingListsScreen() {
                             </View>
 
                             <View style={styles.itemActions}>
-                              <Pressable
-                                onPress={() => shiftItemQuantityInEdit(item, -1)}
-                                disabled={selectedList.status !== 'active'}
-                                style={[
-                                  styles.itemActionButton,
-                                  {
-                                    backgroundColor: palette.surfaceSoft,
-                                    opacity: selectedList.status === 'active' ? 1 : 0.45,
-                                  },
-                                ]}>
-                                <IconSymbol name="minus" size={12} color={palette.textPrimary} />
-                              </Pressable>
+                              {item.quantity > 1 && (
+                                <Pressable
+                                  onPress={() => shiftItemQuantityInEdit(item, -1)}
+                                  disabled={selectedList.status !== 'active'}
+                                  style={[
+                                    styles.itemActionButton,
+                                    {
+                                      backgroundColor: palette.surfaceSoft,
+                                      opacity: selectedList.status === 'active' ? 1 : 0.45,
+                                    },
+                                  ]}>
+                                  <IconSymbol name="minus" size={12} color={palette.textPrimary} />
+                                </Pressable>
+                              )}
                               <Pressable
                                 onPress={() => shiftItemQuantityInEdit(item, 1)}
                                 disabled={selectedList.status !== 'active'}
@@ -1535,17 +1545,43 @@ const styles = StyleSheet.create({
   },
   itemRow: {
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    minHeight: 52,
-    paddingVertical: 9,
+    borderRadius: 16,
+    overflow: 'hidden',
+    flexDirection: 'column',
+    gap: 0,
+  },
+  itemStateRow: {
+    flexDirection: 'row',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: 10,
+    gap: 8,
+  },
+  itemStateChip: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  itemContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 14,
   },
   itemTextWrap: {
     flex: 1,
-    gap: 2,
+    gap: 4,
+  },
+  itemQtyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    padding: 10,
   },
   itemStateActions: {
     flexDirection: 'row',
@@ -1553,9 +1589,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   itemStateButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1670,23 +1706,23 @@ const styles = StyleSheet.create({
   inlineActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
   inlineActionButton: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   inlineQtyBadge: {
-    minHeight: 24,
+    minHeight: 28,
     borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 10,
   },
   emptyCta: {
     marginTop: 4,
