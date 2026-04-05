@@ -458,12 +458,12 @@ export default function HomeScreen() {
         {/* Spacer droite */}
         <View style={styles.bottomSpacer} />
 
-        {/* Liste (droite) */}
+        {/* Zones (droite) */}
         <Pressable
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/shopping-lists'); }}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setIsListMenuOpen(true); }}
           style={({ pressed }) => [styles.bottomTabBtn, { opacity: pressed ? 0.7 : 1 }]}>
-          <IconSymbol name="cart.fill" size={24} color={palette.accentPrimary} />
-          <Text style={[styles.bottomTabLabel, { color: palette.accentPrimary }]}>Liste</Text>
+          <IconSymbol name="square.grid.2x2.fill" size={24} color={palette.accentPrimary} />
+          <Text style={[styles.bottomTabLabel, { color: palette.accentPrimary }]}>Zones</Text>
         </Pressable>
 
       </View>
