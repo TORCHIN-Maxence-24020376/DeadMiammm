@@ -3,11 +3,13 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Typography } from '@/constants/theme';
+import { Radii, Typography } from '@/constants/theme';
 import { useAppSettings } from '@/providers/app-settings-provider';
 import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { buildRecipeSuggestions } from '@/utils/recipes';
+
+const RECIPE_COLORS = ['#16A34A', '#D97706', '#8B5CF6', '#0284C7'];
 
 export default function RecipesScreen() {
   const router = useRouter();
@@ -18,9 +20,14 @@ export default function RecipesScreen() {
   const recipes = buildRecipeSuggestions(products, { expiringSoonDays });
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}> 
-      <View style={[styles.header, { borderBottomColor: palette.border }]}> 
-        <Pressable onPress={() => router.back()} style={[styles.backButton, { backgroundColor: palette.surfaceSoft }]}> 
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            styles.backButton,
+            { backgroundColor: pressed ? palette.surfacePressed : palette.surface },
+          ]}>
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
@@ -30,32 +37,51 @@ export default function RecipesScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-        {recipes.map((recipe, recipeIndex) => (
-          <View key={`${recipe.id}-${recipeIndex}`} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
-            <View style={styles.cardHeader}>
-              <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>{recipe.title}</Text>
-              <Text style={[Typography.labelMd, { color: palette.accentPrimary }]}>{recipe.time}</Text>
-            </View>
+        {recipes.map((recipe, recipeIndex) => {
+          const accentColor = RECIPE_COLORS[recipeIndex % RECIPE_COLORS.length];
+          return (
+            <View
+              key={`${recipe.id}-${recipeIndex}`}
+              style={[styles.card, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
+              <View style={[styles.cardAccent, { backgroundColor: accentColor }]} />
 
-            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-              Basé sur les produits à moins de {expiringSoonDays} jour{expiringSoonDays > 1 ? 's' : ''} de la date limite.
-            </Text>
-
-            <View style={styles.ingredientsWrap}>
-              {recipe.ingredients.map((ingredient, ingredientIndex) => (
-                <View key={`${recipe.id}-${ingredientIndex}`} style={[styles.ingredientPill, { backgroundColor: palette.surfaceSoft }]}> 
-                  <Text style={[Typography.caption, { color: palette.textPrimary }]}>{ingredient}</Text>
+              <View style={styles.cardInner}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardTitleWrap}>
+                    <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>{recipe.title}</Text>
+                    <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                      Basé sur les produits à moins de {expiringSoonDays} jour{expiringSoonDays > 1 ? 's' : ''}.
+                    </Text>
+                  </View>
+                  <View style={[styles.timeChip, { backgroundColor: accentColor + '18' }]}>
+                    <IconSymbol name="clock" size={12} color={accentColor} />
+                    <Text style={[Typography.labelSm, { color: accentColor }]}>{recipe.time}</Text>
+                  </View>
                 </View>
-              ))}
-            </View>
 
-            <Pressable
-              onPress={() => router.push(`/recipe/${recipe.id}`)}
-              style={[styles.ctaButton, { backgroundColor: palette.accentPrimary }]}>
-              <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Voir la recette</Text>
-            </Pressable>
-          </View>
-        ))}
+                <View style={styles.ingredientsWrap}>
+                  {recipe.ingredients.map((ingredient, ingredientIndex) => (
+                    <View
+                      key={`${recipe.id}-${ingredientIndex}`}
+                      style={[styles.ingredientPill, { backgroundColor: accentColor + '14' }]}>
+                      <Text style={[Typography.caption, { color: accentColor }]}>{ingredient}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <Pressable
+                  onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  style={({ pressed }) => [
+                    styles.ctaButton,
+                    { backgroundColor: pressed ? accentColor + 'DD' : accentColor },
+                  ]}>
+                  <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Voir la recette</Text>
+                  <IconSymbol name="chevron.right" size={15} color={palette.textInverse} />
+                </Pressable>
+              </View>
+            </View>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -66,52 +92,74 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    height: 60,
-    borderBottomWidth: 1,
+    height: 64,
     paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   backButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   list: {
     padding: 16,
-    gap: 12,
+    gap: 14,
   },
   card: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 14,
-    gap: 10,
+    borderRadius: Radii.card,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  cardAccent: {
+    width: 5,
+  },
+  cardInner: {
+    flex: 1,
+    padding: 16,
+    gap: 12,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  cardTitleWrap: {
+    flex: 1,
+    gap: 3,
+  },
+  timeChip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radii.capsule,
   },
   ingredientsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   ingredientPill: {
-    height: 28,
-    borderRadius: 14,
     paddingHorizontal: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 5,
+    borderRadius: Radii.capsule,
   },
   ctaButton: {
-    height: 44,
-    borderRadius: 14,
+    height: 46,
+    borderRadius: Radii.capsule,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
   },
 });

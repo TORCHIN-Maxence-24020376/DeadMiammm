@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Typography } from '@/constants/theme';
+import { Radii, Typography } from '@/constants/theme';
 import { useAppSettings } from '@/providers/app-settings-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 
@@ -11,6 +11,8 @@ type NotificationSetting = {
   key: 'expiring' | 'lowStock' | 'recipes';
   title: string;
   subtitle: string;
+  icon: string;
+  color: string;
 };
 
 export default function NotificationSettingsScreen() {
@@ -23,23 +25,34 @@ export default function NotificationSettingsScreen() {
       key: 'expiring',
       title: 'Produits proches de la date',
       subtitle: `Alerte pour les produits à ${expiringSoonDays} jour${expiringSoonDays > 1 ? 's' : ''} ou moins`,
+      icon: 'clock.badge.exclamationmark',
+      color: '#D97706',
     },
     {
       key: 'lowStock',
       title: 'Stock faible',
       subtitle: `Notification quand quantité <= ${lowStockThreshold}`,
+      icon: 'archivebox',
+      color: '#DC2626',
     },
     {
       key: 'recipes',
       title: 'Idées recettes',
       subtitle: 'Suggestion de recettes anti-gaspi',
+      icon: 'sparkles',
+      color: '#16A34A',
     },
   ];
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}>
-      <View style={[styles.header, { borderBottomColor: palette.border }]}>
-        <Pressable onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: palette.surfaceSoft }]}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            styles.iconButton,
+            { backgroundColor: pressed ? palette.surfacePressed : palette.surface },
+          ]}>
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
@@ -49,14 +62,21 @@ export default function NotificationSettingsScreen() {
       </View>
 
       <View style={styles.content}>
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Ajuste les alertes qui t’aident au quotidien sans surcharge.
+        <View style={[styles.infoCard, { backgroundColor: palette.glowSecondary }]}>
+          <IconSymbol name="bell.badge" size={16} color={palette.accentPrimary} />
+          <Text style={[Typography.bodySm, { color: palette.textSecondary, flex: 1 }]}>
+            Ajuste les alertes qui t'aident au quotidien sans surcharge.
           </Text>
         </View>
 
         {settingsRows.map((row) => (
-          <View key={row.key} style={[styles.row, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <View
+            key={row.key}
+            style={[styles.row, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
+            <View style={[styles.rowIcon, { backgroundColor: row.color + '18' }]}>
+              <IconSymbol name={row.icon} size={20} color={row.color} />
+            </View>
+
             <View style={styles.rowText}>
               <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{row.title}</Text>
               <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{row.subtitle}</Text>
@@ -65,7 +85,7 @@ export default function NotificationSettingsScreen() {
             <Switch
               value={notifications[row.key]}
               onValueChange={(value) => setNotificationEnabled(row.key, value)}
-              trackColor={{ false: palette.border, true: palette.accentPrimary }}
+              trackColor={{ false: palette.surfacePressed, true: palette.accentPrimary }}
               thumbColor={notifications[row.key] ? palette.textInverse : palette.surface}
             />
           </View>
@@ -80,40 +100,50 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    height: 60,
-    borderBottomWidth: 1,
+    height: 64,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   content: {
     padding: 16,
-    gap: 10,
+    gap: 12,
   },
-  card: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 12,
+  infoCard: {
+    borderRadius: 18,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
   row: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 12,
+    borderRadius: 20,
+    padding: 14,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  rowIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rowText: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
 });

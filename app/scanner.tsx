@@ -22,7 +22,7 @@ import { buildNutritionRows } from '@/utils/nutrition';
 type ScanState = 'scanning' | 'fallback' | 'recognized';
 type DraftSource = 'scan' | 'search' | 'manual';
 
-const storageChoices: StorageZone[] = ['frigo', 'congelateur', 'sec', 'dph', 'autre'];
+const storageChoices: StorageZone[] = ['frigo', 'congelateur', 'sec', 'autre'];
 const ISO_DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function ScannerScreen() {
@@ -105,7 +105,7 @@ export default function ScannerScreen() {
     return buildNutritionRows(nutrition);
   }, [nutrition]);
 
-  const expirationRequired = storage !== 'dph';
+  const expirationRequired = true;
 
   const closeScanner = () => {
     if (router.canGoBack()) {
@@ -496,11 +496,6 @@ export default function ScannerScreen() {
                     key={choice}
                     onPress={() => {
                       setStorage(choice);
-                      if (choice === 'dph') {
-                        setExpirationDate('');
-                        return;
-                      }
-
                       if (!normalizeExpirationDate(expirationDate)) {
                         setExpirationDate(defaultExpirationDate(choice));
                       }
@@ -645,9 +640,6 @@ export default function ScannerScreen() {
 }
 
 function defaultExpirationDate(zone: StorageZone) {
-  if (zone === 'dph') {
-    return '';
-  }
 
   const date = new Date();
   date.setDate(date.getDate() + 7);
@@ -738,39 +730,41 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    height: 60,
+    height: 64,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderBottomWidth: 1,
   },
   backButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cameraFrame: {
     flex: 1,
     margin: 16,
-    borderRadius: 28,
-    borderWidth: 1,
+    borderRadius: 30,
     overflow: 'hidden',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 8,
   },
   cameraPermissionFallback: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 12,
     paddingHorizontal: 16,
   },
   permissionButton: {
-    height: 40,
-    borderRadius: 14,
+    height: 44,
+    borderRadius: Radii.capsule,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 20,
   },
   cameraOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -781,10 +775,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     right: 14,
-    minHeight: 34,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 10,
+    minHeight: 36,
+    borderRadius: Radii.capsule,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -798,10 +791,10 @@ const styles = StyleSheet.create({
   },
   corner: {
     position: 'absolute',
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderWidth: 4,
-    borderRadius: 10,
+    borderRadius: 12,
   },
   cornerTopLeft: {
     top: 0,
@@ -828,31 +821,33 @@ const styles = StyleSheet.create({
     borderLeftWidth: 0,
   },
   scanStatusBadge: {
-    borderRadius: 14,
-    borderWidth: 1,
-    minHeight: 36,
-    paddingHorizontal: 12,
+    borderRadius: Radii.capsule,
+    minHeight: 38,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
   },
   fallbackPanel: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 12,
-    gap: 10,
+    borderRadius: 22,
+    padding: 14,
+    gap: 12,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.10,
+    shadowRadius: 14,
+    elevation: 3,
   },
   searchInputWrap: {
-    borderRadius: 12,
+    borderRadius: Radii.capsule,
     borderWidth: 1,
-    paddingHorizontal: 10,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   searchInput: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 44,
   },
   searchResultsList: {
     maxHeight: 150,
@@ -861,16 +856,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   searchResultRow: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     gap: 2,
   },
   secondaryAction: {
-    height: 38,
-    borderRadius: 12,
-    borderWidth: 1,
+    height: 42,
+    borderRadius: Radii.capsule,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -880,22 +873,21 @@ const styles = StyleSheet.create({
     right: 10,
     bottom: 0,
     top: '20%',
-    borderTopLeftRadius: 34,
-    borderTopRightRadius: 34,
-    borderWidth: 1,
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
     paddingHorizontal: 16,
     paddingTop: 10,
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.16,
-    shadowRadius: 24,
-    elevation: 16,
+    shadowOffset: { width: 0, height: -12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    elevation: 18,
   },
   sheetHandle: {
-    width: 46,
+    width: 42,
     height: 5,
     borderRadius: Radii.capsule,
     alignSelf: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   quickSheetContent: {
     gap: 12,
@@ -905,37 +897,34 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   textField: {
-    height: 42,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
   },
   productImage: {
     width: '100%',
-    height: 130,
-    borderRadius: 18,
-    borderWidth: 1,
+    height: 140,
+    borderRadius: 20,
   },
   productImagePressable: {
-    borderRadius: 18,
+    borderRadius: 20,
     overflow: 'hidden',
   },
   imageHintPill: {
     position: 'absolute',
-    right: 8,
-    bottom: 8,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 8,
+    right: 10,
+    bottom: 10,
+    height: 26,
+    borderRadius: 13,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
   imageMock: {
     height: 110,
-    borderRadius: 18,
-    borderWidth: 1,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -945,17 +934,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stepperButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quantityInput: {
     flex: 1,
-    height: 40,
+    height: 42,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     textAlign: 'center',
   },
   storageWrap: {
@@ -964,31 +953,30 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   storageChoice: {
-    height: 34,
-    borderRadius: 12,
+    height: 36,
+    borderRadius: Radii.capsule,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
   },
   infoRow: {
-    minHeight: 34,
-    borderRadius: 12,
+    minHeight: 36,
+    borderRadius: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 12,
   },
   nutritionToggle: {
-    height: 36,
+    height: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   nutritionPanel: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 10,
+    borderRadius: 16,
+    padding: 12,
     gap: 6,
   },
   nutritionRow: {
@@ -997,11 +985,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addButton: {
-    height: 48,
-    borderRadius: 15,
+    height: 52,
+    borderRadius: Radii.capsule,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 5,
   },
   imageModalBackdrop: {
     flex: 1,
@@ -1011,9 +1003,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   imageModalCloseButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },

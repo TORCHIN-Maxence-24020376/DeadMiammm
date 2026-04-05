@@ -5,7 +5,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Typography } from '@/constants/theme';
+import { Radii, Typography } from '@/constants/theme';
 import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { clearOpenFoodFactsProductCache, getOpenFoodFactsProductCacheCount } from '@/services/open-food-facts';
@@ -53,7 +53,7 @@ export default function AccountSettingsScreen() {
     }
 
     Alert.alert(
-      'Réinitialiser l’inventaire ?',
+      'Réinitialiser l\u2019inventaire ?',
       `Cette action supprimera ${products.length} produit(s) enregistrés localement.`,
       [
         { text: 'Annuler', style: 'cancel' },
@@ -89,8 +89,13 @@ export default function AccountSettingsScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}>
-      <View style={[styles.header, { borderBottomColor: palette.border }]}>
-        <Pressable onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: palette.surfaceSoft }]}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            styles.iconButton,
+            { backgroundColor: pressed ? palette.surfacePressed : palette.surface },
+          ]}>
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
@@ -100,8 +105,11 @@ export default function AccountSettingsScreen() {
       </View>
 
       <View style={styles.content}>
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Résumé local</Text>
+        <View style={[styles.card, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
+          <View style={styles.cardTitle}>
+            <View style={[styles.titleDot, { backgroundColor: palette.accentPrimary }]} />
+            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Résumé local</Text>
+          </View>
 
           <View style={styles.statsWrap}>
             <StatPill label="Produits" value={String(stats.total)} palette={palette} />
@@ -111,10 +119,13 @@ export default function AccountSettingsScreen() {
           </View>
         </View>
 
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Maintenance</Text>
+        <View style={[styles.card, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
+          <View style={styles.cardTitle}>
+            <View style={[styles.titleDot, { backgroundColor: palette.danger }]} />
+            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Maintenance</Text>
+          </View>
           <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Nettoie l’application en repartant d’un inventaire vide.
+            Nettoie l'application en repartant d'un inventaire vide.
           </Text>
 
           <View style={styles.maintenanceActions}>
@@ -125,19 +136,23 @@ export default function AccountSettingsScreen() {
                 styles.secondaryButton,
                 {
                   backgroundColor: pressed ? palette.surfacePressed : palette.surfaceSoft,
-                  borderColor: palette.border,
                   opacity: isClearingCache ? 0.5 : 1,
                 },
               ]}>
-              <IconSymbol name="trash.fill" size={14} color={palette.textPrimary} />
-              <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>
+              <IconSymbol name="trash.fill" size={14} color={palette.textSecondary} />
+              <Text style={[Typography.labelMd, { color: palette.textSecondary }]}>
                 {isClearingCache ? 'Suppression du cache…' : 'Vider le cache produits API'}
               </Text>
             </Pressable>
 
-            <Pressable onPress={onResetInventory} style={[styles.dangerButton, { backgroundColor: palette.danger }]}>
+            <Pressable
+              onPress={onResetInventory}
+              style={({ pressed }) => [
+                styles.dangerButton,
+                { backgroundColor: pressed ? '#B91C1C' : palette.danger },
+              ]}>
               <IconSymbol name="trash.fill" size={14} color={palette.textInverse} />
-              <Text style={[Typography.labelMd, { color: palette.textInverse }]}>Vider l’inventaire local</Text>
+              <Text style={[Typography.labelMd, { color: palette.textInverse }]}>Vider l'inventaire local</Text>
             </Pressable>
           </View>
         </View>
@@ -178,9 +193,9 @@ function StatPill({
   palette: ReturnType<typeof useAppTheme>['palette'];
 }) {
   return (
-    <View style={[styles.statPill, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
-      <Text style={[Typography.caption, { color: palette.textSecondary }]}>{label}</Text>
-      <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{value}</Text>
+    <View style={[styles.statPill, { backgroundColor: palette.glowSecondary }]}>
+      <Text style={[Typography.caption, { color: palette.textTertiary }]}>{label}</Text>
+      <Text style={[Typography.titleMd, { color: palette.accentPrimary }]}>{value}</Text>
     </View>
   );
 }
@@ -190,62 +205,76 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    height: 60,
-    borderBottomWidth: 1,
+    height: 64,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   content: {
     padding: 16,
-    gap: 10,
+    gap: 14,
   },
   card: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 12,
-    gap: 10,
+    borderRadius: Radii.card,
+    padding: 18,
+    gap: 14,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  cardTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  titleDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   statsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   statPill: {
-    width: '48%',
-    borderRadius: 14,
-    borderWidth: 1,
-    minHeight: 62,
+    width: '47%',
+    borderRadius: 18,
+    minHeight: 68,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 4,
   },
   dangerButton: {
-    height: 42,
-    borderRadius: 12,
+    height: 48,
+    borderRadius: Radii.capsule,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.24,
+    shadowRadius: 14,
+    elevation: 4,
   },
   maintenanceActions: {
-    gap: 8,
+    gap: 10,
   },
   secondaryButton: {
-    height: 42,
-    borderRadius: 12,
-    borderWidth: 1,
+    height: 46,
+    borderRadius: Radii.capsule,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
   },
 });

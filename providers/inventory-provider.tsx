@@ -5,7 +5,7 @@ import { AddInventoryProductInput, InventoryProduct, StorageZone } from '@/data/
 import { isValidDateString } from '@/utils/format';
 
 const INVENTORY_STORAGE_KEY = 'deadmiammm.inventory.v1';
-const STORAGE_ZONES: StorageZone[] = ['frigo', 'congelateur', 'sec', 'animalerie', 'dph', 'autre'];
+const STORAGE_ZONES: StorageZone[] = ['frigo', 'congelateur', 'sec', 'autre'];
 
 type InventoryContextValue = {
   products: InventoryProduct[];

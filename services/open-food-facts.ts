@@ -507,8 +507,6 @@ function isStorageZone(value: unknown): value is StorageZone {
     value === 'frigo' ||
     value === 'congelateur' ||
     value === 'sec' ||
-    value === 'animalerie' ||
-    value === 'dph' ||
     value === 'autre'
   );
 }
@@ -612,12 +610,8 @@ function inferStorageZone(categories: string[]): StorageZone {
     return 'congelateur';
   }
 
-  if (matchesAny(text, ['petfood', 'pet-food', 'chien', 'chat', 'animal'])) {
-    return 'animalerie';
-  }
-
-  if (matchesAny(text, ['hygiene', 'cosmetics', 'beauty', 'shampoo', 'soap', 'household', 'dph'])) {
-    return 'dph';
+  if (matchesAny(text, ['petfood', 'pet-food', 'chien', 'chat', 'animal', 'hygiene', 'cosmetics', 'beauty', 'shampoo', 'soap', 'household'])) {
+    return 'autre';
   }
 
   if (

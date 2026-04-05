@@ -17,20 +17,18 @@ type ListMenuSheetProps = {
   visible: boolean;
   palette: AppPalette;
   onClose: () => void;
-  onSelect: (slug: 'frigo' | 'congelateur' | 'sec' | 'animalerie' | 'dph' | 'autre' | 'recipes' | 'shopping-lists') => void;
+  onSelect: (slug: 'frigo' | 'congelateur' | 'sec' | 'autre' | 'recipes' | 'shopping-lists') => void;
 };
 
-const SHEET_HEIGHT = Math.round(Dimensions.get('window').height * 0.68);
+const SHEET_HEIGHT = Math.round(Dimensions.get('window').height * 0.47);
 
 const entries = [
-  { slug: 'frigo', title: 'Frigo', icon: 'refrigerator' },
-  { slug: 'congelateur', title: 'Congélateur', icon: 'snowflake' },
-  { slug: 'sec', title: 'Sec', icon: 'shippingbox.fill' },
-  { slug: 'animalerie', title: 'Animalerie', icon: 'pawprint.fill' },
-  { slug: 'dph', title: 'DPH', icon: 'cross.case.fill' },
-  { slug: 'autre', title: 'Autre', icon: 'shippingbox.fill' },
-  { slug: 'recipes', title: 'Recettes', icon: 'fork.knife' },
-  { slug: 'shopping-lists', title: 'Liste de courses', icon: 'note.text' },
+  { slug: 'frigo', title: 'Frigo', icon: 'refrigerator', color: '#0284C7' },
+  { slug: 'congelateur', title: 'Congélateur', icon: 'snowflake', color: '#6366F1' },
+  { slug: 'sec', title: 'Aliment sec', icon: 'shippingbox.fill', color: '#D97706' },
+  { slug: 'autre', title: 'Autre', icon: 'shippingbox.fill', color: '#8B5CF6' },
+  { slug: 'recipes', title: 'Recettes', icon: 'fork.knife', color: '#16A34A' },
+  { slug: 'shopping-lists', title: 'Liste de courses', icon: 'note.text', color: '#F59E0B' },
 ] as const;
 
 export function ListMenuSheet({ visible, palette, onClose, onSelect }: ListMenuSheetProps) {
@@ -111,15 +109,17 @@ export function ListMenuSheet({ visible, palette, onClose, onSelect }: ListMenuS
           styles.sheet,
           {
             backgroundColor: palette.surface,
-            borderColor: palette.border,
             shadowColor: palette.shadowDark,
             transform: [{ translateY }],
           },
         ]}
         {...panResponder.panHandlers}>
-        <View style={[styles.handle, { backgroundColor: palette.textTertiary }]} />
+        <View style={[styles.handle, { backgroundColor: palette.textTertiary + '66' }]} />
 
-        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Accès rapides</Text>
+        <View style={styles.sheetHeader}>
+          <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Accès rapides</Text>
+          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Naviguez par zone ou section</Text>
+        </View>
 
         <View style={styles.grid}>
           {entries.map((entry) => (
@@ -133,14 +133,20 @@ export function ListMenuSheet({ visible, palette, onClose, onSelect }: ListMenuS
                     style={[
                       styles.iconTile,
                       {
-                        backgroundColor: pressed ? palette.surfacePressed : palette.surfaceSoft,
-                        borderColor: palette.border,
-                        shadowColor: palette.shadowDark,
+                        backgroundColor: pressed
+                          ? entry.color + '30'
+                          : entry.color + '18',
                       },
                     ]}>
-                    <IconSymbol name={entry.icon} size={26} color={palette.accentPrimary} />
+                    <IconSymbol name={entry.icon} size={28} color={entry.color} />
                   </View>
-                  <Text style={[Typography.labelMd, { color: palette.textPrimary, textAlign: 'center' }]}>{entry.title}</Text>
+                  <Text
+                    style={[
+                      Typography.labelSm,
+                      { color: palette.textPrimary, textAlign: 'center' },
+                    ]}>
+                    {entry.title}
+                  </Text>
                 </>
               )}
             </Pressable>
@@ -154,55 +160,52 @@ export function ListMenuSheet({ visible, palette, onClose, onSelect }: ListMenuS
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#020617',
+    backgroundColor: '#0C0905',
   },
   sheet: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 10,
+    left: 10,
+    right: 10,
     height: SHEET_HEIGHT,
-    borderRadius: 34,
-    borderWidth: 1,
+    borderRadius: 36,
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 20,
-    gap: 20,
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.28,
-    shadowRadius: 35,
-    elevation: 18,
+    bottom: 8,
+    paddingTop: 14,
+    paddingBottom: 24,
+    gap: 18,
+    shadowOffset: { width: 0, height: 24 },
+    shadowOpacity: 0.30,
+    shadowRadius: 40,
+    elevation: 20,
   },
   handle: {
-    width: 46,
+    width: 42,
     height: 5,
     borderRadius: Radii.capsule,
     alignSelf: 'center',
+  },
+  sheetHeader: {
+    gap: 2,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 20,
+    rowGap: 18,
   },
   gridItem: {
     width: '30.5%',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   gridItemPressed: {
-    transform: [{ scale: 0.97 }],
+    transform: [{ scale: 0.95 }],
   },
   iconTile: {
-    width: 86,
-    height: 86,
-    borderRadius: 28,
-    borderWidth: 1,
+    width: 82,
+    height: 82,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOffset: { width: 0, height: 9 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 6,
   },
 });

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AppPalette, Typography } from '@/constants/theme';
+import { AppPalette, Radii, Typography } from '@/constants/theme';
 import { inferLowStock } from '@/data/inventory';
 import { useAppSettings } from '@/providers/app-settings-provider';
 import { useInventory } from '@/providers/inventory-provider';
@@ -14,6 +14,13 @@ type NotificationsSheetProps = {
   palette: AppPalette;
   onClose: () => void;
 };
+
+const ICON_COLORS = {
+  'clock.badge.exclamationmark': '#D97706',
+  'checklist': '#DC2626',
+  'sparkles': '#16A34A',
+  'checkmark.circle.fill': '#16A34A',
+} as const;
 
 export function NotificationsSheet({ visible, palette, onClose }: NotificationsSheetProps) {
   const { products } = useInventory();
@@ -111,32 +118,44 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
           {
             transform: [{ translateY: offsetY }],
             backgroundColor: palette.surface,
-            borderColor: palette.border,
             shadowColor: palette.shadowDark,
           },
         ]}>
         <View style={styles.headerRow}>
-          <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Notifications</Text>
-          <Pressable onPress={onClose} style={[styles.closeButton, { backgroundColor: palette.surfaceSoft }]}>
-            <IconSymbol name="xmark" size={18} color={palette.textSecondary} />
+          <View style={styles.headerLeft}>
+            <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Notifications</Text>
+            <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+              {notifications.length} alerte{notifications.length > 1 ? 's' : ''}
+            </Text>
+          </View>
+          <Pressable
+            onPress={onClose}
+            style={({ pressed }) => [
+              styles.closeButton,
+              { backgroundColor: pressed ? palette.surfacePressed : palette.surfaceSoft },
+            ]}>
+            <IconSymbol name="xmark" size={16} color={palette.textSecondary} />
           </Pressable>
         </View>
 
         <View style={styles.list}>
-          {notifications.map((item) => (
-            <View
-              key={item.id}
-              style={[styles.notificationCard, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
-              <View style={[styles.iconWrap, { backgroundColor: palette.overlay }]}>
-                <IconSymbol name={item.icon} size={18} color={palette.accentPrimary} />
-              </View>
+          {notifications.map((item) => {
+            const iconColor = ICON_COLORS[item.icon];
+            return (
+              <View
+                key={item.id}
+                style={[styles.notificationCard, { backgroundColor: iconColor + '10' }]}>
+                <View style={[styles.iconWrap, { backgroundColor: iconColor + '20' }]}>
+                  <IconSymbol name={item.icon} size={20} color={iconColor} />
+                </View>
 
-              <View style={styles.cardTextWrap}>
-                <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{item.title}</Text>
-                <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{item.body}</Text>
+                <View style={styles.cardTextWrap}>
+                  <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{item.title}</Text>
+                  <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{item.body}</Text>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </Animated.View>
     </Modal>
@@ -146,55 +165,56 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(2, 6, 23, 0.45)',
+    backgroundColor: 'rgba(12, 9, 5, 0.50)',
   },
   sheet: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 16,
-    borderRadius: 30,
-    borderWidth: 1,
+    left: 10,
+    right: 10,
+    bottom: 14,
+    borderRadius: 32,
     paddingHorizontal: 18,
-    paddingVertical: 16,
+    paddingVertical: 18,
     gap: 14,
-    shadowOffset: { width: 0, height: 22 },
-    shadowOpacity: 0.25,
-    shadowRadius: 30,
-    elevation: 16,
+    shadowOffset: { width: 0, height: 24 },
+    shadowOpacity: 0.28,
+    shadowRadius: 36,
+    elevation: 18,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  headerLeft: {
+    gap: 1,
+  },
   closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   list: {
-    gap: 12,
+    gap: 10,
   },
   notificationCard: {
     borderRadius: 18,
-    borderWidth: 1,
-    padding: 12,
+    padding: 14,
     flexDirection: 'row',
     gap: 12,
   },
   iconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
+    marginTop: 1,
   },
   cardTextWrap: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
 });

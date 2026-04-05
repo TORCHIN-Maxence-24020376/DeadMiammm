@@ -621,7 +621,6 @@ export default function ShoppingListsScreen() {
                       },
                     ]}>
 
-                    {/* Bloc 1 — état : trouvé / non trouvé */}
                     <View style={[styles.itemStateRow, { borderBottomColor: palette.border }]}>
                       <Pressable
                         onPress={() => togglePurchased(item)}
@@ -662,7 +661,6 @@ export default function ShoppingListsScreen() {
                       </Pressable>
                     </View>
 
-                    {/* Bloc 2 — image + texte */}
                     <View style={styles.itemContentRow}>
                       <ItemImage
                         item={item}
@@ -698,7 +696,6 @@ export default function ShoppingListsScreen() {
                       </View>
                     </View>
 
-                    {/* Bloc 3 — contrôles quantité */}
                     <View style={[styles.itemQtyRow, { borderTopColor: palette.border }]}>
                       {item.quantity > 1 && (
                         <Pressable
@@ -758,7 +755,7 @@ export default function ShoppingListsScreen() {
 
       <Modal visible={isEditMenuOpen} transparent animationType="slide" onRequestClose={closeEditMenu}>
         <View style={styles.modalRoot}>
-          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(2, 6, 23, 0.44)' }]} onPress={closeEditMenu} />
+          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(12, 9, 5, 0.52)' }]} onPress={closeEditMenu} />
 
           <View style={[styles.modalSheet, { backgroundColor: palette.background, borderColor: palette.border, paddingBottom: insets.bottom + 12 }]}>
             <View style={[styles.modalHeader, { borderBottomColor: palette.border }]}>
@@ -1047,7 +1044,7 @@ export default function ShoppingListsScreen() {
         onRequestClose={() => setUnavailableModal((prev) => ({ ...prev, visible: false }))}>
         <View style={styles.modalRoot}>
           <Pressable
-            style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(2, 6, 23, 0.44)' }]}
+            style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(12, 9, 5, 0.52)' }]}
             onPress={() => setUnavailableModal((prev) => ({ ...prev, visible: false }))}
           />
           <View style={[styles.modalSheet, { backgroundColor: palette.background, borderColor: palette.border, paddingBottom: insets.bottom + 12 }]}>
@@ -1454,25 +1451,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    height: 60,
-    borderBottomWidth: 1,
+    height: 64,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   card: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 12,
-    gap: 10,
+    borderRadius: 22,
+    padding: 14,
+    gap: 12,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.10,
+    shadowRadius: 14,
+    elevation: 3,
   },
   sectionListsWrap: {
     gap: 8,
@@ -1481,16 +1480,14 @@ const styles = StyleSheet.create({
     minWidth: 28,
     height: 24,
     borderRadius: 12,
-    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
   listRow: {
-    minHeight: 54,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 10,
+    minHeight: 56,
+    borderRadius: 16,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1508,12 +1505,11 @@ const styles = StyleSheet.create({
   },
   statusPill: {
     minWidth: 64,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
   },
   progressWrap: {
     flexDirection: 'row',
@@ -1524,7 +1520,6 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 10,
     borderRadius: 999,
-    borderWidth: 1,
     overflow: 'hidden',
   },
   progressFill: {
@@ -1534,21 +1529,23 @@ const styles = StyleSheet.create({
   },
   remainingBadge: {
     minHeight: 38,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
   },
   itemsWrap: {
-    gap: 8,
+    gap: 10,
   },
   itemRow: {
-    borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
     flexDirection: 'column',
     gap: 0,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
   },
   itemStateRow: {
     flexDirection: 'row',
@@ -1562,8 +1559,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 9,
+    borderRadius: 12,
     borderWidth: 1,
   },
   itemContentRow: {
@@ -1589,24 +1586,21 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   itemStateButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    borderWidth: 1,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quantityPill: {
     minHeight: 24,
     borderRadius: 12,
-    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
   itemThumb: {
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 10,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1629,7 +1623,7 @@ const styles = StyleSheet.create({
   listPickerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     padding: 12,
     gap: 10,
@@ -1638,17 +1632,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   inlineCreateInput: {
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   inlineCreateButton: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1658,26 +1652,24 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   listDeleteButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
   expandButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
   archivedItemsWrap: {
-    borderTopWidth: 1,
-    marginTop: 4,
+    marginTop: 6,
     paddingTop: 8,
     gap: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   archivedItemRow: {
     flexDirection: 'row',
@@ -1693,15 +1685,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
   archiveOkBadge: {
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   inlineActions: {
     flexDirection: 'row',
@@ -1709,25 +1700,23 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   inlineActionButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    borderWidth: 1,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
   inlineQtyBadge: {
-    minHeight: 28,
-    borderRadius: 8,
-    borderWidth: 1,
+    minHeight: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 10,
   },
   emptyCta: {
     marginTop: 4,
-    height: 40,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1737,18 +1726,16 @@ const styles = StyleSheet.create({
   },
   modalSheet: {
     maxHeight: '90%',
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    borderWidth: 1,
-    borderBottomWidth: 0,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
   },
   modalHeader: {
-    minHeight: 58,
-    borderBottomWidth: 1,
-    paddingHorizontal: 16,
+    minHeight: 60,
+    paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   modalContent: {
     padding: 16,
@@ -1762,33 +1749,31 @@ const styles = StyleSheet.create({
   createButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   input: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 46,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    borderRadius: 14,
+    paddingHorizontal: 14,
   },
   primaryPill: {
-    height: 38,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 10,
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   secondaryAction: {
     flex: 1,
-    height: 38,
-    borderRadius: 12,
-    borderWidth: 1,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
   },
   rowActions: {
     flexDirection: 'row',
@@ -1806,43 +1791,42 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   stepperButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quantityInput: {
     width: 72,
-    height: 40,
+    height: 42,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     textAlign: 'center',
     paddingHorizontal: 6,
   },
   unitInput: {
     width: 90,
-    height: 40,
+    height: 42,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 10,
   },
   primaryAction: {
     minWidth: 74,
-    height: 40,
-    borderRadius: 12,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
   },
   inventoryList: {
     gap: 6,
   },
   inventoryRow: {
-    minHeight: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 10,
+    minHeight: 46,
+    borderRadius: 14,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1853,10 +1837,9 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   editItemRow: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -1866,9 +1849,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   itemActionButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },

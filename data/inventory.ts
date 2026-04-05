@@ -1,12 +1,10 @@
-export type StorageZone = 'frigo' | 'congelateur' | 'sec' | 'animalerie' | 'dph' | 'autre';
+export type StorageZone = 'frigo' | 'congelateur' | 'sec' | 'autre';
 export type DisplayMode = 'cards' | 'list';
 export type ProductSource = 'scan' | 'search' | 'manual';
 export type AppIconName =
   | 'refrigerator'
   | 'snowflake'
-  | 'shippingbox.fill'
-  | 'pawprint.fill'
-  | 'cross.case.fill';
+  | 'shippingbox.fill';
 
 export type NutritionFacts = {
   energyKj?: number;
@@ -42,9 +40,7 @@ export type AddInventoryProductInput = Omit<InventoryProduct, 'id' | 'addedAt'>;
 export const zoneLabels: Record<StorageZone, string> = {
   frigo: 'Frigo',
   congelateur: 'Congélateur',
-  sec: 'Sec',
-  animalerie: 'Animalerie',
-  dph: 'DPH',
+  sec: 'Aliment sec',
   autre: 'Autre',
 };
 
@@ -52,8 +48,6 @@ export const zoneIconMap: Record<StorageZone, AppIconName> = {
   frigo: 'refrigerator',
   congelateur: 'snowflake',
   sec: 'shippingbox.fill',
-  animalerie: 'pawprint.fill',
-  dph: 'cross.case.fill',
   autre: 'shippingbox.fill',
 };
 

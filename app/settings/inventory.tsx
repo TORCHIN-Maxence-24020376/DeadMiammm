@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Typography } from '@/constants/theme';
+import { Radii, Typography } from '@/constants/theme';
 import { useAppSettings } from '@/providers/app-settings-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 
@@ -40,8 +40,13 @@ export default function InventorySettingsScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}>
-      <View style={[styles.header, { borderBottomColor: palette.border }]}>
-        <Pressable onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: palette.surfaceSoft }]}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            styles.iconButton,
+            { backgroundColor: pressed ? palette.surfacePressed : palette.surface },
+          ]}>
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
@@ -51,12 +56,19 @@ export default function InventorySettingsScreen() {
       </View>
 
       <View style={styles.content}>
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Seuil “bientôt expiré”</Text>
-          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Un produit est considéré proche de la date si son expiration est dans {expiringSoonDays} jour
-            {expiringSoonDays > 1 ? 's' : ''} ou moins.
-          </Text>
+        <View style={[styles.card, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.headerIcon, { backgroundColor: palette.glowSecondary }]}>
+              <IconSymbol name="clock.badge.exclamationmark" size={20} color={palette.accentPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Seuil &ldquo;bientôt expiré&rdquo;</Text>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                Un produit est proche si son expiration est dans {expiringSoonDays} jour
+                {expiringSoonDays > 1 ? 's' : ''} ou moins.
+              </Text>
+            </View>
+          </View>
 
           <Stepper
             value={expiringSoonDays}
@@ -66,14 +78,22 @@ export default function InventorySettingsScreen() {
             maxReached={expiringSoonDays >= MAX_EXPIRING_DAYS}
             palette={palette}
             unit="jours"
+            accentColor={palette.accentPrimary}
           />
         </View>
 
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Seuil stock faible</Text>
-          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Un produit passe en stock faible quand la quantité est inférieure ou égale à {lowStockThreshold}.
-          </Text>
+        <View style={[styles.card, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.headerIcon, { backgroundColor: palette.warning + '18' }]}>
+              <IconSymbol name="archivebox" size={20} color={palette.warning} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Seuil stock faible</Text>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                Un produit passe en stock faible quand la quantité est ≤ {lowStockThreshold}.
+              </Text>
+            </View>
+          </View>
 
           <Stepper
             value={lowStockThreshold}
@@ -83,12 +103,14 @@ export default function InventorySettingsScreen() {
             maxReached={lowStockThreshold >= MAX_LOW_STOCK_THRESHOLD}
             palette={palette}
             unit="unités"
+            accentColor={palette.warning}
           />
         </View>
 
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Ces réglages pilotent l’accueil, les alertes, les recettes et la génération automatique de liste de courses.
+        <View style={[styles.infoCard, { backgroundColor: palette.glowSecondary }]}>
+          <IconSymbol name="info.circle" size={16} color={palette.accentPrimary} />
+          <Text style={[Typography.bodySm, { color: palette.textSecondary, flex: 1 }]}>
+            Ces réglages pilotent l'accueil, les alertes, les recettes et la génération automatique de liste de courses.
           </Text>
         </View>
       </View>
@@ -104,6 +126,7 @@ function Stepper({
   maxReached,
   palette,
   unit,
+  accentColor,
 }: {
   value: number;
   onDecrease: () => void;
@@ -112,6 +135,7 @@ function Stepper({
   maxReached: boolean;
   palette: ReturnType<typeof useAppTheme>['palette'];
   unit: string;
+  accentColor: string;
 }) {
   return (
     <View style={styles.stepperWrap}>
@@ -122,16 +146,15 @@ function Stepper({
           styles.stepperButton,
           {
             backgroundColor: pressed ? palette.surfacePressed : palette.surfaceSoft,
-            borderColor: palette.border,
-            opacity: minReached ? 0.45 : 1,
+            opacity: minReached ? 0.40 : 1,
           },
         ]}>
         <IconSymbol name="minus" size={16} color={palette.textPrimary} />
       </Pressable>
 
-      <View style={[styles.stepperValue, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
-        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>{value}</Text>
-        <Text style={[Typography.caption, { color: palette.textSecondary }]}>{unit}</Text>
+      <View style={[styles.stepperValue, { backgroundColor: accentColor + '14' }]}>
+        <Text style={[Typography.displayLg, { color: accentColor }]}>{value}</Text>
+        <Text style={[Typography.caption, { color: accentColor + 'AA' }]}>{unit}</Text>
       </View>
 
       <Pressable
@@ -141,8 +164,7 @@ function Stepper({
           styles.stepperButton,
           {
             backgroundColor: pressed ? palette.surfacePressed : palette.surfaceSoft,
-            borderColor: palette.border,
-            opacity: maxReached ? 0.45 : 1,
+            opacity: maxReached ? 0.40 : 1,
           },
         ]}>
         <IconSymbol name="plus" size={16} color={palette.textPrimary} />
@@ -156,50 +178,69 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    height: 60,
-    borderBottomWidth: 1,
+    height: 64,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   content: {
     padding: 16,
-    gap: 12,
+    gap: 14,
   },
   card: {
+    borderRadius: Radii.card,
+    padding: 18,
+    gap: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  headerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoCard: {
     borderRadius: 18,
-    borderWidth: 1,
-    padding: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: 10,
   },
   stepperWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   stepperButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    borderWidth: 1,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepperValue: {
     flex: 1,
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1,
+    height: 64,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 1,
+    gap: 0,
   },
 });
