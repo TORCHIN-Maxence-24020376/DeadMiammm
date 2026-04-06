@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppPalette, Typography } from '@/constants/theme';
 import { inferLowStock } from '@/data/inventory';
@@ -25,27 +25,42 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
     const items: { id: string; title: string; body: string; icon: 'clock.badge.exclamationmark' | 'checklist' | 'sparkles' | 'checkmark.circle.fill' }[] = [];
 
     if (notificationSettings.expiring) {
-      const expiringCount = products.filter((product) => product.expiresAt && daysUntil(product.expiresAt) <= expiringSoonDays).length;
-      if (expiringCount > 0) {
-        items.push({
-          id: 'expiring',
-          title: `${expiringCount} produit${expiringCount > 1 ? 's' : ''} proche${expiringCount > 1 ? 's' : ''} de la date`,
-          body: `Seuil actif: ${expiringSoonDays} jour${expiringSoonDays > 1 ? 's' : ''}.`,
-          icon: 'clock.badge.exclamationmark',
-        });
-      }
+      products.forEach((product) => {
+        if (!product.expiresAt) return;
+        const days = daysUntil(product.expiresAt);
+
+        if (days < 0) {
+          items.push({
+            id: `expired-${product.id}`,
+            title: product.name,
+            body: 'Ce produit est périmé.',
+            icon: 'clock.badge.exclamationmark',
+          });
+        } else if (days >= 0 && days <= expiringSoonDays) {
+          items.push({
+            id: `expiring-${product.id}`,
+            title: product.name,
+            body: days === 0 ? "A consommer aujourd'hui" : `Périme dans ${days} jour${days > 1 ? 's' : ''}`,
+            icon: 'clock.badge.exclamationmark',
+          });
+        }
+      });
     }
 
     if (notificationSettings.lowStock) {
-      const lowStockCount = products.filter((product) => inferLowStock(product, lowStockThreshold)).length;
-      if (lowStockCount > 0) {
+      const lowStockProducts = products.filter((product) => {
+        const initial = product.initialQuantity ?? product.quantity;
+        return initial > 1 && inferLowStock(product, lowStockThreshold);
+      });
+
+      lowStockProducts.forEach((product) => {
         items.push({
-          id: 'low-stock',
-          title: `${lowStockCount} produit${lowStockCount > 1 ? 's' : ''} en stock faible`,
-          body: `Seuil actif: quantité <= ${lowStockThreshold}.`,
+          id: `low-stock-${product.id}`,
+          title: `${product.name} en stock faible`,
+          body: `Il ne reste que ${product.quantity} ${product.unit}(s).`,
           icon: 'checklist',
         });
-      }
+      });
     }
 
     if (notificationSettings.recipes) {
@@ -122,7 +137,7 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
           </Pressable>
         </View>
 
-        <View style={styles.list}>
+        <ScrollView style={{ maxHeight: 400 }} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           {notifications.map((item) => (
             <View
               key={item.id}
@@ -137,7 +152,7 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
               </View>
             </View>
           ))}
-        </View>
+        </ScrollView>
       </Animated.View>
     </Modal>
   );
