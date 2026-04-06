@@ -506,6 +506,20 @@ function renderProducts({
             </View>
 
             <Text style={[Typography.caption, { color: palette.textSecondary }]}>{zoneLabel(product.zone)}</Text>
+            <View style={styles.productProgressRow}>
+              <View style={[styles.productProgressTrack, { backgroundColor: palette.overlay, borderColor: palette.border }]}>
+                <View
+                  style={[
+                    styles.productProgressFill,
+                    {
+                      width: `${Math.max(0, Math.min(100, product.consumptionPercent))}%`,
+                      backgroundColor: palette.accentPrimary,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[Typography.caption, { color: palette.textSecondary }]}>{product.consumptionPercent}%</Text>
+            </View>
             <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Expire le {product.expiresAt ? formatFullDate(product.expiresAt) : '—'}</Text>
           </Pressable>
         ))}
@@ -524,6 +538,20 @@ function renderProducts({
 
             <View>
               <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{product.name}</Text>
+              <View style={styles.productProgressRow}>
+                <View style={[styles.productProgressTrack, { backgroundColor: palette.overlay, borderColor: palette.border }]}>
+                  <View
+                    style={[
+                      styles.productProgressFill,
+                      {
+                        width: `${Math.max(0, Math.min(100, product.consumptionPercent))}%`,
+                        backgroundColor: palette.accentPrimary,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[Typography.caption, { color: palette.textSecondary }]}>{product.consumptionPercent}%</Text>
+              </View>
               <Text style={[Typography.caption, { color: palette.textSecondary }]}>Expire le {product.expiresAt ? formatFullDate(product.expiresAt) : '—'}</Text>
             </View>
           </View>
@@ -697,6 +725,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+  },
+  productProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  productProgressTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  productProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    minWidth: 2,
   },
   smallIcon: {
     width: 24,

@@ -1,13 +1,13 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, LayoutChangeEvent, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Typography } from '@/constants/theme';
-import { sourceLabels, zoneIconMap } from '@/data/inventory';
+import { sourceLabels, StorageZone, zoneIconMap, zoneLabels } from '@/data/inventory';
 import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { formatFullDate, zoneLabel } from '@/utils/format';
@@ -21,13 +21,27 @@ const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('fr-FR', {
   minute: '2-digit',
 });
 
+const EDITABLE_ZONES: StorageZone[] = ['frigo', 'congelateur', 'sec', 'animalerie', 'dph', 'autre'];
+
 export default function ProductDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const { palette } = useAppTheme();
-  const { products, removeProduct } = useInventory();
+  const { products, removeProduct, updateProduct, updateProductConsumption, consumeProductUnit } = useInventory();
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [sliderWidth, setSliderWidth] = useState(1);
+  const [sliderPercent, setSliderPercent] = useState(0);
+  const sliderPercentRef = useRef(0);
+  const [editName, setEditName] = useState('');
+  const [editQuantityInput, setEditQuantityInput] = useState('1');
+  const [editUnit, setEditUnit] = useState('');
+  const [editZone, setEditZone] = useState<StorageZone>('sec');
+  const [editExpiresAt, setEditExpiresAt] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editFormat, setEditFormat] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
 
   const productId = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -42,6 +56,14 @@ export default function ProductDetailsScreen() {
   const nutritionRows = useMemo(() => {
     return buildNutritionRows(product?.nutrition);
   }, [product]);
+
+  useEffect(() => {
+    setSliderPercent(product?.consumptionPercent ?? 0);
+  }, [product?.id, product?.consumptionPercent]);
+
+  useEffect(() => {
+    sliderPercentRef.current = sliderPercent;
+  }, [sliderPercent]);
 
   const onDeleteProduct = () => {
     if (!product) {
@@ -76,6 +98,143 @@ export default function ProductDetailsScreen() {
 
   const onCloseImageModal = () => {
     setIsImageModalOpen(false);
+  };
+
+  const onOpenEditModal = () => {
+    if (!product) {
+      return;
+    }
+
+    setEditName(product.name);
+    setEditQuantityInput(String(product.quantity));
+    setEditUnit(product.unit);
+    setEditZone(product.zone);
+    setEditExpiresAt(product.expiresAt ?? '');
+    setEditCategory(product.category ?? '');
+    setEditFormat(product.format ?? '');
+    setEditError(null);
+    setIsEditModalOpen(true);
+    Haptics.selectionAsync();
+  };
+
+  const onCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditError(null);
+  };
+
+  const onConsumptionTrackLayout = (event: LayoutChangeEvent) => {
+    setSliderWidth(Math.max(1, event.nativeEvent.layout.width));
+  };
+
+  const onSlideToLocation = useCallback(
+    (locationX: number) => {
+      const ratio = locationX / sliderWidth;
+      setSliderPercent(toBoundedPercent(ratio * 100));
+    },
+    [sliderWidth]
+  );
+
+  const commitSliderPercent = useCallback(async () => {
+    if (!product) {
+      return;
+    }
+
+    const nextValue = toBoundedPercent(sliderPercentRef.current);
+    if (nextValue === product.consumptionPercent) {
+      return;
+    }
+
+    await updateProductConsumption(product.id, nextValue);
+  }, [product, updateProductConsumption]);
+
+  const sliderResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (event) => {
+          onSlideToLocation(event.nativeEvent.locationX);
+        },
+        onPanResponderMove: (event) => {
+          onSlideToLocation(event.nativeEvent.locationX);
+        },
+        onPanResponderRelease: () => {
+          void commitSliderPercent();
+        },
+        onPanResponderTerminate: () => {
+          void commitSliderPercent();
+        },
+      }),
+    [commitSliderPercent, onSlideToLocation]
+  );
+
+  const onConsumeOneUnit = async () => {
+    if (!product) {
+      return;
+    }
+
+    const result = await consumeProductUnit(product.id);
+    if (result === 'not-found') {
+      return;
+    }
+
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    if (result === 'removed') {
+      onBack();
+      return;
+    }
+
+    setSliderPercent(0);
+  };
+
+  const onSaveEdit = async () => {
+    if (!product) {
+      return;
+    }
+
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      setEditError('Le nom est obligatoire.');
+      return;
+    }
+
+    const parsedQuantity = parsePositiveInteger(editQuantityInput);
+    if (!parsedQuantity) {
+      setEditError('La quantite doit etre un entier positif.');
+      return;
+    }
+
+    const trimmedUnit = editUnit.trim();
+    if (!trimmedUnit) {
+      setEditError('L unite est obligatoire.');
+      return;
+    }
+
+    const normalizedExpiresAt = normalizeEditableDate(editExpiresAt);
+    if (normalizedExpiresAt === 'invalid') {
+      setEditError('La date doit etre au format YYYY-MM-DD.');
+      return;
+    }
+
+    const updated = await updateProduct(product.id, {
+      name: trimmedName,
+      quantity: parsedQuantity,
+      unit: trimmedUnit,
+      zone: editZone,
+      expiresAt: normalizedExpiresAt,
+      category: editCategory,
+      format: editFormat,
+    });
+
+    if (!updated) {
+      setEditError('Impossible de modifier cette entree.');
+      return;
+    }
+
+    setEditError(null);
+    setIsEditModalOpen(false);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   return (
@@ -138,6 +297,42 @@ export default function ProductDetailsScreen() {
               <InfoRow label="Expiration" value={product.expiresAt ? formatFullDate(product.expiresAt) : 'Sans date'} palette={palette} />
               <InfoRow label="Format / volume" value={product.format ?? 'Non renseigné'} palette={palette} />
               <InfoRow label="Catégorie" value={product.category ?? 'Non renseignée'} palette={palette} />
+              <View style={styles.progressSection}>
+                <View style={styles.progressHeader}>
+                  <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Consommation en cours</Text>
+                  <Text style={[Typography.bodySm, { color: palette.textPrimary }]}>{sliderPercent}%</Text>
+                </View>
+                <View style={styles.progressTouchArea} onLayout={onConsumptionTrackLayout} {...sliderResponder.panHandlers}>
+                  <View style={[styles.progressTrack, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        {
+                          width: `${sliderPercent}%`,
+                          backgroundColor: palette.accentPrimary,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <View
+                    style={[
+                      styles.progressThumb,
+                      {
+                        left: `${sliderPercent}%`,
+                        backgroundColor: palette.accentPrimary,
+                        borderColor: palette.surface,
+                      },
+                    ]}
+                  />
+                </View>
+                <Pressable
+                  onPress={() => {
+                    void onConsumeOneUnit();
+                  }}
+                  style={[styles.consumeButton, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+                  <Text style={[Typography.labelSm, { color: palette.textPrimary }]}>Consommer</Text>
+                </Pressable>
+              </View>
               <InfoRow label="Origine" value={sourceLabels[product.source]} palette={palette} />
               <InfoRow label="Code-barres" value={product.barcode ?? 'Non disponible'} palette={palette} />
               <InfoRow label="Ajouté le" value={formatDateTime(product.addedAt)} palette={palette} />
@@ -157,6 +352,11 @@ export default function ProductDetailsScreen() {
               </View>
             )}
           </View>
+
+          <Pressable onPress={onOpenEditModal} style={[styles.editButton, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+            <IconSymbol name="pencil" size={15} color={palette.textPrimary} />
+            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Modifier entree</Text>
+          </Pressable>
 
           <Pressable onPress={onDeleteProduct} style={[styles.deleteButton, { backgroundColor: palette.danger }]}>
             <IconSymbol name="trash.fill" size={15} color={palette.textInverse} />
@@ -180,6 +380,132 @@ export default function ProductDetailsScreen() {
               <Image source={{ uri: product.imageUrl }} style={styles.imageModalImage} contentFit="contain" />
             </View>
           ) : null}
+        </View>
+      </Modal>
+
+      <Modal visible={isEditModalOpen} transparent animationType="fade" onRequestClose={onCloseEditModal}>
+        <View style={[styles.editModalBackdrop, { backgroundColor: 'rgba(2, 6, 23, 0.55)' }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onCloseEditModal} />
+          <View style={[styles.editModalSheet, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+            <View style={styles.editHeader}>
+              <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Modifier entree</Text>
+              <Pressable onPress={onCloseEditModal} style={[styles.iconButton, { backgroundColor: palette.surfaceSoft }]}>
+                <IconSymbol name="xmark" size={16} color={palette.textPrimary} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.editForm}>
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Nom</Text>
+                <TextInput
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="Nom du produit"
+                  placeholderTextColor={palette.textTertiary}
+                  style={[styles.fieldInput, Typography.bodyMd, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft }]}
+                />
+              </View>
+
+              <View style={styles.fieldRow}>
+                <View style={styles.fieldCol}>
+                  <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Quantite</Text>
+                  <TextInput
+                    value={editQuantityInput}
+                    onChangeText={setEditQuantityInput}
+                    keyboardType="number-pad"
+                    placeholder="1"
+                    placeholderTextColor={palette.textTertiary}
+                    style={[styles.fieldInput, Typography.bodyMd, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft }]}
+                  />
+                </View>
+
+                <View style={styles.fieldCol}>
+                  <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Unite</Text>
+                  <TextInput
+                    value={editUnit}
+                    onChangeText={setEditUnit}
+                    placeholder="unite"
+                    placeholderTextColor={palette.textTertiary}
+                    style={[styles.fieldInput, Typography.bodyMd, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft }]}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Date expiration (YYYY-MM-DD)</Text>
+                <TextInput
+                  value={editExpiresAt}
+                  onChangeText={setEditExpiresAt}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={palette.textTertiary}
+                  style={[styles.fieldInput, Typography.bodyMd, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft }]}
+                />
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Zone</Text>
+                <View style={styles.zoneChoices}>
+                  {EDITABLE_ZONES.map((zone) => (
+                    <Pressable
+                      key={zone}
+                      onPress={() => setEditZone(zone)}
+                      style={[
+                        styles.zoneChoice,
+                        {
+                          backgroundColor: editZone === zone ? palette.accentPrimary : palette.surfaceSoft,
+                          borderColor: palette.border,
+                        },
+                      ]}>
+                      <Text style={[Typography.labelSm, { color: editZone === zone ? palette.textInverse : palette.textPrimary }]}>
+                        {zoneLabels[zone]}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Categorie</Text>
+                <TextInput
+                  value={editCategory}
+                  onChangeText={setEditCategory}
+                  placeholder="Categorie"
+                  placeholderTextColor={palette.textTertiary}
+                  style={[styles.fieldInput, Typography.bodyMd, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft }]}
+                />
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Format / volume</Text>
+                <TextInput
+                  value={editFormat}
+                  onChangeText={setEditFormat}
+                  placeholder="Format"
+                  placeholderTextColor={palette.textTertiary}
+                  style={[styles.fieldInput, Typography.bodyMd, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft }]}
+                />
+              </View>
+
+              {editError ? <Text style={[Typography.caption, { color: palette.danger }]}>{editError}</Text> : null}
+
+              <Pressable
+                onPress={() => {
+                  void onSaveEdit();
+                }}
+                style={({ pressed }) => [
+                  styles.saveEditButton,
+                  {
+                    backgroundColor: pressed ? palette.accentPrimaryStrong : palette.accentPrimary,
+                  },
+                ]}>
+                <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Enregistrer</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -216,6 +542,53 @@ function formatDateTime(value: string) {
   }
 
   return DATE_TIME_FORMATTER.format(date);
+}
+
+function toBoundedPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function parsePositiveInteger(value: string) {
+  const cleaned = value.replace(/[^0-9]/g, '');
+  if (!cleaned) {
+    return null;
+  }
+
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return Math.round(parsed);
+}
+
+function normalizeEditableDate(value: string): string | null | 'invalid' {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return 'invalid';
+  }
+
+  return toLocalDateKey(parsed);
+}
+
+function toLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 const styles = StyleSheet.create({
@@ -290,6 +663,55 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  progressSection: {
+    gap: 8,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  progressTrack: {
+    height: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    minWidth: 2,
+  },
+  progressTouchArea: {
+    height: 28,
+    justifyContent: 'center',
+  },
+  progressThumb: {
+    position: 'absolute',
+    top: '50%',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    transform: [{ translateX: -9 }, { translateY: -9 }],
+  },
+  consumeButton: {
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editButton: {
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
   deleteButton: {
     height: 48,
     borderRadius: 15,
@@ -339,5 +761,62 @@ const styles = StyleSheet.create({
   imageModalImage: {
     width: '100%',
     height: '86%',
+  },
+  editModalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  editModalSheet: {
+    maxHeight: '90%',
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+  },
+  editHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editForm: {
+    gap: 10,
+    paddingBottom: 6,
+  },
+  fieldBlock: {
+    gap: 6,
+  },
+  fieldRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  fieldCol: {
+    flex: 1,
+    gap: 6,
+  },
+  fieldInput: {
+    minHeight: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  zoneChoices: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  zoneChoice: {
+    minHeight: 34,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  saveEditButton: {
+    height: 46,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

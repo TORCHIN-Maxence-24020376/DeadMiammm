@@ -53,6 +53,7 @@ export default function CategoryScreen() {
         {productsInZone.map((product) => (
           <Pressable key={product.id} onPress={() => openProduct(product.id)} style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
             <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>{product.name}</Text>
+            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Consommation: {product.consumptionPercent}%</Text>
             <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Expire le {product.expiresAt ? formatFullDate(product.expiresAt) : 'Sans date'}</Text>
             <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Quantité: {product.quantity} {product.unit}</Text>
           </Pressable>

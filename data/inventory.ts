@@ -30,6 +30,7 @@ export type InventoryProduct = {
   expiresAt: string | null;
   quantity: number;
   unit: string;
+  consumptionPercent: number;
   addedAt: string;
   category?: string;
   format?: string;
@@ -37,7 +38,14 @@ export type InventoryProduct = {
   source: ProductSource;
 };
 
-export type AddInventoryProductInput = Omit<InventoryProduct, 'id' | 'addedAt'>;
+export type AddInventoryProductInput = Omit<InventoryProduct, 'id' | 'addedAt' | 'consumptionPercent'> & {
+  consumptionPercent?: number;
+};
+
+export type UpdateInventoryProductInput = Pick<
+  InventoryProduct,
+  'name' | 'zone' | 'expiresAt' | 'quantity' | 'unit' | 'category' | 'format'
+>;
 
 export const zoneLabels: Record<StorageZone, string> = {
   frigo: 'Frigo',
@@ -65,4 +73,12 @@ export const sourceLabels: Record<ProductSource, string> = {
 
 export function inferLowStock(product: Pick<InventoryProduct, 'quantity'>, threshold = 1) {
   return product.quantity <= threshold;
+}
+
+export function clampConsumptionPercent(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)));
 }

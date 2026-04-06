@@ -38,6 +38,20 @@ type OffProduct = {
   nutriments?: Record<string, number | string | undefined>;
 };
 
+type LocalDBRecord = {
+  version: number;
+  updatedAt: string;
+  products: Record<string, OpenFoodFactsProduct>;
+  searches: Record<string, string[]>;
+};
+
+type LocalDBPayload = {
+  version?: unknown;
+  updatedAt?: unknown;
+  products?: unknown;
+  searches?: unknown;
+};
+
 const PRODUCT_FIELDS = [
   'code',
   'product_name',
@@ -53,25 +67,19 @@ const PRODUCT_FIELDS = [
   'nutriments',
 ].join(',');
 
-const PRODUCT_CACHE_STORAGE_KEY_PREFIX = 'deadmiammm.off-product-cache.v1.';
+const LOCAL_DB_STORAGE_KEY = 'localDB';
+const LOCAL_DB_SCHEMA_VERSION = 1;
+const LEGACY_PRODUCT_CACHE_STORAGE_KEY_PREFIX = 'deadmiammm.off-product-cache.v1.';
 const productMemoryCache = new Map<string, OpenFoodFactsProduct>();
-const PRODUCT_CACHE_SCHEMA_VERSION = 1;
+const searchMemoryCache = new Map<string, OpenFoodFactsProduct[]>();
+let localDBMemoryCache: LocalDBRecord | null = null;
+
 const MAX_NAME_LENGTH = 180;
 const MAX_LABEL_LENGTH = 280;
 const MAX_CATEGORIES = 80;
 const MAX_CATEGORY_LENGTH = 120;
 const MAX_NUTRITION_VALUE = 100_000;
-
-type CachedProductPayload = {
-  version: number;
-  barcode: string;
-  cachedAt: string;
-  product: unknown;
-};
-
-type LegacyCachedProductPayload = {
-  product?: unknown;
-};
+const MAX_SEARCH_RESULTS = 10;
 
 export class OpenFoodFactsError extends Error {
   status: number;
@@ -110,34 +118,26 @@ export async function fetchProductByBarcode(barcode: string): Promise<OpenFoodFa
   }
 
   const cachedProduct = await readCachedProduct(normalizedBarcode);
-  if (cachedProduct && hasSufficientProductData(cachedProduct)) {
+  if (cachedProduct) {
     return cachedProduct;
   }
 
-  try {
-    const response = await fetch(
-      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(normalizedBarcode)}.json?fields=${PRODUCT_FIELDS}`
-    );
+  const response = await fetch(
+    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(normalizedBarcode)}.json?fields=${PRODUCT_FIELDS}`
+  );
 
-    if (!response.ok) {
-      throw new OpenFoodFactsError(`OpenFoodFacts request failed with status ${response.status}`, response.status);
-    }
-
-    const payload = (await response.json()) as ProductResponse;
-    if (payload.status !== 1 || !payload.product) {
-      return cachedProduct ?? null;
-    }
-
-    const normalizedProduct = normalizeProduct(payload.product, payload.code ?? normalizedBarcode);
-    await cacheProduct(normalizedProduct);
-    return normalizedProduct;
-  } catch (error) {
-    if (cachedProduct) {
-      return cachedProduct;
-    }
-
-    throw error;
+  if (!response.ok) {
+    throw new OpenFoodFactsError(`OpenFoodFacts request failed with status ${response.status}`, response.status);
   }
+
+  const payload = (await response.json()) as ProductResponse;
+  if (payload.status !== 1 || !payload.product) {
+    return null;
+  }
+
+  const normalizedProduct = normalizeProduct(payload.product, payload.code ?? normalizedBarcode);
+  await cacheProduct(normalizedProduct);
+  return normalizedProduct;
 }
 
 export async function searchProductsByText(query: string): Promise<OpenFoodFactsProduct[]> {
@@ -146,12 +146,17 @@ export async function searchProductsByText(query: string): Promise<OpenFoodFacts
     return [];
   }
 
+  const cachedResults = await readCachedProductsByQuery(trimmedQuery);
+  if (cachedResults.length > 0) {
+    return cachedResults;
+  }
+
   const params = new URLSearchParams({
     search_terms: trimmedQuery,
     search_simple: '1',
     action: 'process',
     json: '1',
-    page_size: '10',
+    page_size: String(MAX_SEARCH_RESULTS),
     fields: PRODUCT_FIELDS,
   });
 
@@ -162,6 +167,7 @@ export async function searchProductsByText(query: string): Promise<OpenFoodFacts
 
   const payload = (await response.json()) as SearchResponse;
   if (!payload.products || payload.products.length === 0) {
+    await cacheProducts([], trimmedQuery);
     return [];
   }
 
@@ -170,90 +176,59 @@ export async function searchProductsByText(query: string): Promise<OpenFoodFacts
       if (!product.code) {
         return null;
       }
+
       return normalizeProduct(product, product.code);
     })
     .filter((product): product is OpenFoodFactsProduct => Boolean(product));
 
-  await cacheProducts(products);
+  await cacheProducts(products, trimmedQuery);
   return products;
 }
 
 export async function clearOpenFoodFactsProductCache() {
   productMemoryCache.clear();
+  searchMemoryCache.clear();
+  localDBMemoryCache = null;
+
+  await AsyncStorage.removeItem(LOCAL_DB_STORAGE_KEY);
 
   const keys = await AsyncStorage.getAllKeys();
-  const cacheKeys = keys.filter((key) => key.startsWith(PRODUCT_CACHE_STORAGE_KEY_PREFIX));
-  if (cacheKeys.length === 0) {
-    return;
+  const legacyKeys = keys.filter((key) => key.startsWith(LEGACY_PRODUCT_CACHE_STORAGE_KEY_PREFIX));
+  if (legacyKeys.length > 0) {
+    await AsyncStorage.multiRemove(legacyKeys);
   }
-
-  await AsyncStorage.multiRemove(cacheKeys);
 }
 
 export async function getOpenFoodFactsProductCacheCount() {
-  const keys = await AsyncStorage.getAllKeys();
-  return keys.filter((key) => key.startsWith(PRODUCT_CACHE_STORAGE_KEY_PREFIX)).length;
+  const localDB = await readLocalDB();
+  return Object.keys(localDB.products).length;
 }
 
-async function cacheProducts(products: OpenFoodFactsProduct[]) {
-  const dedupedProducts = dedupeProductsByBarcode(products);
-  await Promise.all(dedupedProducts.map((product) => cacheProduct(product)));
+async function cacheProducts(products: OpenFoodFactsProduct[], query?: string) {
+  const dedupedProducts = dedupeProductsByBarcode(products)
+    .map((product) => sanitizeCachedProduct(product, product.barcode))
+    .filter((product): product is OpenFoodFactsProduct => Boolean(product));
+
+  const localDB = await readLocalDB();
+
+  for (const product of dedupedProducts) {
+    localDB.products[product.barcode] = product;
+    productMemoryCache.set(product.barcode, product);
+  }
+
+  const normalizedQuery = query ? toSearchKey(query) : '';
+  if (normalizedQuery) {
+    const barcodes = dedupedProducts.map((product) => product.barcode);
+    localDB.searches[normalizedQuery] = barcodes;
+    searchMemoryCache.set(normalizedQuery, dedupedProducts);
+  }
+
+  localDB.updatedAt = new Date().toISOString();
+  await persistLocalDB(localDB);
 }
 
 async function cacheProduct(product: OpenFoodFactsProduct) {
-  const normalizedBarcode = product.barcode.trim();
-  if (!normalizedBarcode) {
-    return;
-  }
-
-  const sanitized = sanitizeCachedProduct(product, normalizedBarcode);
-  if (!sanitized || !hasSufficientProductData(sanitized)) {
-    return;
-  }
-
-  productMemoryCache.set(normalizedBarcode, sanitized);
-
-  try {
-    const payload: CachedProductPayload = {
-      version: PRODUCT_CACHE_SCHEMA_VERSION,
-      barcode: normalizedBarcode,
-      cachedAt: new Date().toISOString(),
-      product: sanitized,
-    };
-
-    const serialized = JSON.stringify(payload);
-    if (!serialized) {
-      return;
-    }
-
-    if (!isCachePayloadShapeValid(payload, normalizedBarcode)) {
-      return;
-    }
-
-    const parsedPayload = JSON.parse(serialized) as unknown;
-    if (!isCachePayloadShapeValid(parsedPayload, normalizedBarcode)) {
-      return;
-    }
-
-    const productFromPayload = extractProductCandidate(parsedPayload);
-    const revalidatedProduct = sanitizeCachedProduct(productFromPayload, normalizedBarcode);
-    if (!revalidatedProduct || !hasSufficientProductData(revalidatedProduct)) {
-      return;
-    }
-
-    const finalPayload = JSON.stringify({
-      ...payload,
-      product: revalidatedProduct,
-    } satisfies CachedProductPayload);
-
-    if (!finalPayload) {
-      return;
-    }
-
-    await AsyncStorage.setItem(toProductCacheStorageKey(normalizedBarcode), finalPayload);
-  } catch (error) {
-    console.warn('OpenFoodFacts product cache write failed:', error);
-  }
+  await cacheProducts([product]);
 }
 
 async function readCachedProduct(barcode: string) {
@@ -268,37 +243,228 @@ async function readCachedProduct(barcode: string) {
     productMemoryCache.delete(barcode);
   }
 
+  const localDB = await readLocalDB();
+  const fromStorage = localDB.products[barcode];
+  if (!fromStorage) {
+    return null;
+  }
+
+  const sanitized = sanitizeCachedProduct(fromStorage, barcode);
+  if (!sanitized) {
+    delete localDB.products[barcode];
+    removeBarcodeFromSearchIndexes(localDB.searches, barcode);
+    localDB.updatedAt = new Date().toISOString();
+    await persistLocalDB(localDB);
+    return null;
+  }
+
+  productMemoryCache.set(barcode, sanitized);
+  return sanitized;
+}
+
+async function readCachedProductsByQuery(query: string) {
+  const searchKey = toSearchKey(query);
+  const fromMemory = searchMemoryCache.get(searchKey);
+  if (fromMemory) {
+    return fromMemory;
+  }
+
+  const localDB = await readLocalDB();
+
+  if (Object.prototype.hasOwnProperty.call(localDB.searches, searchKey)) {
+    const barcodes = localDB.searches[searchKey] ?? [];
+    const indexedProducts = barcodes
+      .map((barcode) => localDB.products[barcode])
+      .map((product) => sanitizeCachedProduct(product))
+      .filter((product): product is OpenFoodFactsProduct => Boolean(product));
+
+    const validBarcodes = indexedProducts.map((product) => product.barcode);
+    if (!areStringArraysEqual(barcodes, validBarcodes)) {
+      localDB.searches[searchKey] = validBarcodes;
+      localDB.updatedAt = new Date().toISOString();
+      await persistLocalDB(localDB);
+    }
+
+    searchMemoryCache.set(searchKey, indexedProducts);
+    return indexedProducts;
+  }
+
+  const localResults = Object.values(localDB.products)
+    .map((product) => sanitizeCachedProduct(product))
+    .filter((product): product is OpenFoodFactsProduct => Boolean(product))
+    .filter((product) => buildSearchHaystack(product).includes(searchKey))
+    .slice(0, MAX_SEARCH_RESULTS);
+
+  if (localResults.length > 0) {
+    localDB.searches[searchKey] = localResults.map((product) => product.barcode);
+    localDB.updatedAt = new Date().toISOString();
+    await persistLocalDB(localDB);
+  }
+
+  searchMemoryCache.set(searchKey, localResults);
+  return localResults;
+}
+
+async function readLocalDB(): Promise<LocalDBRecord> {
+  if (localDBMemoryCache) {
+    return localDBMemoryCache;
+  }
+
   try {
-    const raw = await AsyncStorage.getItem(toProductCacheStorageKey(barcode));
+    const raw = await AsyncStorage.getItem(LOCAL_DB_STORAGE_KEY);
     if (!raw) {
-      return null;
+      const empty = createEmptyLocalDB();
+      localDBMemoryCache = empty;
+      return empty;
     }
 
     const parsed = JSON.parse(raw) as unknown;
-    const shouldPurge = isCachePayloadCorrupted(parsed, barcode);
-    if (shouldPurge) {
-      await AsyncStorage.removeItem(toProductCacheStorageKey(barcode));
-      return null;
-    }
+    const sanitized = sanitizeLocalDBRecord(parsed);
+    localDBMemoryCache = sanitized;
+    hydrateMemoryCachesFromLocalDB(sanitized);
 
-    const candidate = extractProductCandidate(parsed);
-    const sanitized = sanitizeCachedProduct(candidate, barcode);
-    if (!sanitized) {
-      await AsyncStorage.removeItem(toProductCacheStorageKey(barcode));
-      return null;
-    }
-
-    productMemoryCache.set(barcode, sanitized);
-
-    if (!isCachePayloadShapeValid(parsed, barcode)) {
-      await cacheProduct(sanitized);
+    if (JSON.stringify(parsed) !== JSON.stringify(sanitized)) {
+      await AsyncStorage.setItem(LOCAL_DB_STORAGE_KEY, JSON.stringify(sanitized));
     }
 
     return sanitized;
   } catch (error) {
-    console.warn('OpenFoodFacts product cache read failed:', error);
-    return null;
+    console.warn('OpenFoodFacts localDB read failed:', error);
+    const empty = createEmptyLocalDB();
+    localDBMemoryCache = empty;
+    return empty;
   }
+}
+
+async function persistLocalDB(localDB: LocalDBRecord) {
+  localDBMemoryCache = localDB;
+  hydrateMemoryCachesFromLocalDB(localDB);
+
+  try {
+    await AsyncStorage.setItem(LOCAL_DB_STORAGE_KEY, JSON.stringify(localDB));
+  } catch (error) {
+    console.warn('OpenFoodFacts localDB write failed:', error);
+  }
+}
+
+function createEmptyLocalDB(): LocalDBRecord {
+  return {
+    version: LOCAL_DB_SCHEMA_VERSION,
+    updatedAt: new Date().toISOString(),
+    products: {},
+    searches: {},
+  };
+}
+
+function sanitizeLocalDBRecord(value: unknown): LocalDBRecord {
+  const candidate = value && typeof value === 'object' ? (value as LocalDBPayload) : {};
+  const rawProducts =
+    candidate.products && typeof candidate.products === 'object' ? (candidate.products as Record<string, unknown>) : {};
+  const rawSearches =
+    candidate.searches && typeof candidate.searches === 'object' ? (candidate.searches as Record<string, unknown>) : {};
+
+  const products: Record<string, OpenFoodFactsProduct> = {};
+
+  for (const [rawBarcode, rawProduct] of Object.entries(rawProducts)) {
+    const normalizedBarcode = normalizeString(rawBarcode);
+    if (!normalizedBarcode) {
+      continue;
+    }
+
+    const sanitizedProduct = sanitizeCachedProduct(rawProduct, normalizedBarcode);
+    if (!sanitizedProduct) {
+      continue;
+    }
+
+    products[normalizedBarcode] = sanitizedProduct;
+  }
+
+  const searches: Record<string, string[]> = {};
+
+  for (const [rawQuery, rawBarcodes] of Object.entries(rawSearches)) {
+    const normalizedQuery = toSearchKey(rawQuery);
+    if (!normalizedQuery) {
+      continue;
+    }
+
+    if (!Array.isArray(rawBarcodes)) {
+      searches[normalizedQuery] = [];
+      continue;
+    }
+
+    const normalizedBarcodes = dedupeStrings(
+      rawBarcodes
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter((barcode) => Boolean(products[barcode]))
+    );
+
+    searches[normalizedQuery] = normalizedBarcodes;
+  }
+
+  return {
+    version: LOCAL_DB_SCHEMA_VERSION,
+    updatedAt: isValidDateTimeString(candidate.updatedAt) ? candidate.updatedAt : new Date().toISOString(),
+    products,
+    searches,
+  };
+}
+
+function hydrateMemoryCachesFromLocalDB(localDB: LocalDBRecord) {
+  productMemoryCache.clear();
+  searchMemoryCache.clear();
+
+  for (const product of Object.values(localDB.products)) {
+    productMemoryCache.set(product.barcode, product);
+  }
+
+  for (const [query, barcodes] of Object.entries(localDB.searches)) {
+    const products = barcodes
+      .map((barcode) => localDB.products[barcode])
+      .filter((product): product is OpenFoodFactsProduct => Boolean(product));
+    searchMemoryCache.set(query, products);
+  }
+}
+
+function removeBarcodeFromSearchIndexes(searches: Record<string, string[]>, barcode: string) {
+  for (const [query, barcodes] of Object.entries(searches)) {
+    const filtered = barcodes.filter((item) => item !== barcode);
+    searches[query] = filtered;
+  }
+}
+
+function dedupeStrings(values: string[]) {
+  return Array.from(new Set(values));
+}
+
+function areStringArraysEqual(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function toSearchKey(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function buildSearchHaystack(product: OpenFoodFactsProduct) {
+  return [
+    product.barcode,
+    product.name,
+    product.categoryLabel ?? '',
+    product.quantityLabel ?? '',
+    product.categories.join(' '),
+  ]
+    .join(' ')
+    .toLowerCase();
 }
 
 function sanitizeCachedProduct(value: unknown, expectedBarcode?: string): OpenFoodFactsProduct | null {
@@ -373,21 +539,11 @@ function dedupeProductsByBarcode(products: OpenFoodFactsProduct[]) {
     if (!barcode) {
       continue;
     }
+
     map.set(barcode, product);
   }
 
   return Array.from(map.values());
-}
-
-function hasSufficientProductData(product: OpenFoodFactsProduct) {
-  const hasName = product.name.trim().length > 0;
-  const hasDetails = Boolean(product.imageUrl || product.quantityLabel || product.categoryLabel || product.nutrition);
-
-  return hasName && hasDetails;
-}
-
-function toProductCacheStorageKey(barcode: string) {
-  return `${PRODUCT_CACHE_STORAGE_KEY_PREFIX}${barcode}`;
 }
 
 function normalizeString(value: unknown) {
@@ -439,61 +595,7 @@ function sanitizeNutritionNumber(value: unknown) {
   return Math.round(numeric * 1000) / 1000;
 }
 
-function extractProductCandidate(value: unknown): unknown {
-  if (isCachePayloadShapeValid(value)) {
-    return value.product;
-  }
-
-  if (isLegacyCachedPayload(value)) {
-    return value.product;
-  }
-
-  return value;
-}
-
-function isCachePayloadShapeValid(value: unknown, expectedBarcode?: string): value is CachedProductPayload {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as Partial<CachedProductPayload>;
-  if (candidate.version !== PRODUCT_CACHE_SCHEMA_VERSION) {
-    return false;
-  }
-
-  const barcode = normalizeString(candidate.barcode);
-  if (!barcode || (expectedBarcode && barcode !== expectedBarcode)) {
-    return false;
-  }
-
-  if (!isValidDateTimeString(candidate.cachedAt)) {
-    return false;
-  }
-
-  return 'product' in candidate;
-}
-
-function isLegacyCachedPayload(value: unknown): value is LegacyCachedProductPayload {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  return 'product' in value;
-}
-
-function isCachePayloadCorrupted(value: unknown, expectedBarcode: string) {
-  if (isCachePayloadShapeValid(value, expectedBarcode)) {
-    return false;
-  }
-
-  if (isLegacyCachedPayload(value)) {
-    return false;
-  }
-
-  return typeof value === 'object' && value !== null && 'version' in value;
-}
-
-function isValidDateTimeString(value: unknown) {
+function isValidDateTimeString(value: unknown): value is string {
   if (typeof value !== 'string') {
     return false;
   }
