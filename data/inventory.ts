@@ -4,6 +4,9 @@ export type ProductSource = 'scan' | 'search' | 'manual';
 export type AppIconName =
   | 'refrigerator'
   | 'snowflake'
+  | 'jar.fill'
+  | 'archivebox.fill'
+  | 'ellipsis.circle.fill'
   | 'shippingbox.fill';
 
 export type NutritionFacts = {
@@ -47,8 +50,8 @@ export const zoneLabels: Record<StorageZone, string> = {
 export const zoneIconMap: Record<StorageZone, AppIconName> = {
   frigo: 'refrigerator',
   congelateur: 'snowflake',
-  sec: 'shippingbox.fill',
-  autre: 'shippingbox.fill',
+  sec: 'archivebox.fill',
+  autre: 'ellipsis.circle.fill',
 };
 
 export const sourceLabels: Record<ProductSource, string> = {

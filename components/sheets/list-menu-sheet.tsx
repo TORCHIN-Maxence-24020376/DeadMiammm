@@ -25,8 +25,8 @@ const SHEET_HEIGHT = Math.round(Dimensions.get('window').height * 0.47);
 const entries = [
   { slug: 'frigo', title: 'Frigo', icon: 'refrigerator', color: '#0284C7' },
   { slug: 'congelateur', title: 'Congélateur', icon: 'snowflake', color: '#6366F1' },
-  { slug: 'sec', title: 'Aliment sec', icon: 'shippingbox.fill', color: '#D97706' },
-  { slug: 'autre', title: 'Autre', icon: 'shippingbox.fill', color: '#8B5CF6' },
+  { slug: 'sec', title: 'Aliment sec', icon: 'archivebox.fill', color: '#D97706' },
+  { slug: 'autre', title: 'Autre', icon: 'ellipsis.circle.fill', color: '#8B5CF6' },
   { slug: 'recipes', title: 'Recettes', icon: 'fork.knife', color: '#16A34A' },
   { slug: 'shopping-lists', title: 'Liste de courses', icon: 'note.text', color: '#F59E0B' },
 ] as const;

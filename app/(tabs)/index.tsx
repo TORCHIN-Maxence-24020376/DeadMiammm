@@ -32,8 +32,8 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const ZONES = [
   { slug: 'frigo', label: 'Frigo', icon: 'refrigerator' },
   { slug: 'congelateur', label: 'Congélateur', icon: 'snowflake' },
-  { slug: 'sec', label: 'Aliment sec', icon: 'shippingbox.fill' },
-  { slug: 'autre', label: 'Autre', icon: 'shippingbox.fill' },
+  { slug: 'sec', label: 'Aliment sec', icon: 'archivebox.fill' },
+  { slug: 'autre', label: 'Autre', icon: 'ellipsis.circle.fill' },
 ] as const;
 
 export default function HomeScreen() {
