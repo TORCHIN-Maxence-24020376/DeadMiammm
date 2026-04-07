@@ -755,7 +755,7 @@ export default function ShoppingListsScreen() {
 
       <Modal visible={isEditMenuOpen} transparent animationType="slide" onRequestClose={closeEditMenu}>
         <View style={styles.modalRoot}>
-          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(12, 9, 5, 0.52)' }]} onPress={closeEditMenu} />
+          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(7, 12, 24, 0.62)' }]} onPress={closeEditMenu} />
 
           <View style={[styles.modalSheet, { backgroundColor: palette.background, borderColor: palette.border, paddingBottom: insets.bottom + 12 }]}>
             <View style={[styles.modalHeader, { borderBottomColor: palette.border }]}>
@@ -1044,7 +1044,7 @@ export default function ShoppingListsScreen() {
         onRequestClose={() => setUnavailableModal((prev) => ({ ...prev, visible: false }))}>
         <View style={styles.modalRoot}>
           <Pressable
-            style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(12, 9, 5, 0.52)' }]}
+            style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(7, 12, 24, 0.62)' }]}
             onPress={() => setUnavailableModal((prev) => ({ ...prev, visible: false }))}
           />
           <View style={[styles.modalSheet, { backgroundColor: palette.background, borderColor: palette.border, paddingBottom: insets.bottom + 12 }]}>

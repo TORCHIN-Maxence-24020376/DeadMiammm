@@ -165,7 +165,7 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(12, 9, 5, 0.50)',
+    backgroundColor: 'rgba(7, 12, 24, 0.60)',
   },
   sheet: {
     position: 'absolute',

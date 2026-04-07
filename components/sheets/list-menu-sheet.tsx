@@ -160,7 +160,7 @@ export function ListMenuSheet({ visible, palette, onClose, onSelect }: ListMenuS
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#0C0905',
+    backgroundColor: '#070C18',
   },
   sheet: {
     position: 'absolute',
