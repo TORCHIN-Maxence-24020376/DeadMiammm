@@ -1,6 +1,7 @@
 import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutAnimation,
   Platform,
@@ -21,7 +22,9 @@ import { Typography } from '@/constants/theme';
 import { DisplayMode, inferLowStock, InventoryProduct, zoneIconMap } from '@/data/inventory';
 import { useAppSettings } from '@/providers/app-settings-provider';
 import { useInventory } from '@/providers/inventory-provider';
+import { useShoppingLists } from '@/providers/shopping-lists-provider';
 import { useAppTheme } from '@/providers/theme-provider';
+import { searchProductsByText } from '@/services/open-food-facts';
 import { daysUntil, formatFullDate, zoneLabel } from '@/utils/format';
 import { buildRecipeSuggestions } from '@/utils/recipes';
 
@@ -41,6 +44,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
   const { products, isHydrating } = useInventory();
+  const { lists: shoppingLists } = useShoppingLists();
   const { expiringSoonDays, lowStockThreshold } = useAppSettings();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -49,6 +53,8 @@ export default function HomeScreen() {
   const [displayMode, setDisplayMode] = useState<DisplayMode>('cards');
   const [searchValue, setSearchValue] = useState('');
   const [isLowStockExpanded, setIsLowStockExpanded] = useState(false);
+  const [expandedShoppingListId, setExpandedShoppingListId] = useState<string | null>(null);
+  const shoppingListLastPressRef = useRef<{ id: string; time: number } | null>(null);
 
   const filteredProducts = useMemo(() => {
     if (!searchValue.trim()) return products;
@@ -83,6 +89,13 @@ export default function HomeScreen() {
     () => buildRecipeSuggestions(filteredProducts, { expiringSoonDays }).slice(0, 3),
     [expiringSoonDays, filteredProducts]
   );
+
+  const activeShoppingLists = useMemo(
+    () => shoppingLists.filter((l) => l.status === 'active').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    [shoppingLists]
+  );
+
+  const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
   const openScanner = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -427,6 +440,105 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
+        {/* ── Liste de courses ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>Liste de courses</Text>
+            <Pressable onPress={() => router.push('/shopping-lists')}>
+              <Text style={[styles.sectionLink, { color: palette.accentPrimary }]}>Voir tout</Text>
+            </Pressable>
+          </View>
+
+          {activeShoppingLists.length === 0 ? (
+            <Pressable
+              onPress={() => router.push('/shopping-lists')}
+              style={({ pressed }) => [
+                styles.shoppingShortcut,
+                { backgroundColor: pressed ? palette.surfacePressed : palette.surface, shadowColor: palette.shadowDark },
+              ]}>
+              <View style={[styles.shoppingIcon, { backgroundColor: palette.glowSecondary }]}>
+                <IconSymbol name="cart.fill" size={22} color={palette.accentPrimary} />
+              </View>
+              <View style={styles.shoppingText}>
+                <Text style={[styles.shoppingTitle, { color: palette.textPrimary }]}>Aucune liste</Text>
+                <Text style={[styles.shoppingSubtitle, { color: palette.textSecondary }]}>Crée une liste de courses</Text>
+              </View>
+              <IconSymbol name="chevron.right" size={15} color={palette.textTertiary} />
+            </Pressable>
+          ) : (
+            <View style={styles.shoppingListsWrap}>
+              {activeShoppingLists.map((list) => {
+                const remaining = list.items.filter((i) => !i.isChecked && !i.isUnavailable);
+                const isExpanded = expandedShoppingListId === list.id;
+                return (
+                  <View key={list.id} style={[styles.shoppingCard, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
+                    <View style={styles.shoppingCardHeader}>
+                      <Pressable
+                        onPress={() => {
+                          const now = Date.now();
+                          const last = shoppingListLastPressRef.current;
+                          if (last && last.id === list.id && now - last.time < 350) {
+                            shoppingListLastPressRef.current = null;
+                            router.push(`/shopping-lists?listId=${list.id}&edit=1`);
+                          } else {
+                            shoppingListLastPressRef.current = { id: list.id, time: now };
+                            router.push('/shopping-lists');
+                          }
+                        }}
+                        style={styles.shoppingCardHeaderMain}>
+                        <View style={[styles.shoppingIcon, { backgroundColor: palette.glowSecondary }]}>
+                          <IconSymbol name="cart.fill" size={20} color={palette.accentPrimary} />
+                        </View>
+                        <View style={styles.shoppingText}>
+                          <Text style={[styles.shoppingTitle, { color: palette.textPrimary }]} numberOfLines={1}>
+                            {list.name}
+                          </Text>
+                          <Text style={[styles.shoppingSubtitle, { color: palette.textSecondary }]}>
+                            {remaining.length} restant{remaining.length > 1 ? 's' : ''} · {list.items.length} au total
+                          </Text>
+                        </View>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setExpandedShoppingListId((prev) => (prev === list.id ? null : list.id))}
+                        hitSlop={10}
+                        style={[styles.shoppingExpandBtn, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+                        <IconSymbol
+                          name={isExpanded ? 'chevron.down' : 'chevron.right'}
+                          size={13}
+                          color={palette.textSecondary}
+                        />
+                      </Pressable>
+                    </View>
+
+                    {isExpanded && (
+                      <View style={styles.shoppingItemsList}>
+                        {remaining.length === 0 ? (
+                          <Text style={[styles.shoppingMore, { color: palette.textSecondary }]}>Tous les articles sont cochés.</Text>
+                        ) : (
+                          remaining.map((item) => (
+                            <View key={item.id} style={[styles.shoppingItemRow, { borderColor: palette.border }]}>
+                              <ShoppingItemThumb
+                                name={item.name}
+                                linkedImageUrl={item.linkedProductId ? productById.get(item.linkedProductId)?.imageUrl : undefined}
+                                palette={palette}
+                              />
+                              <Text style={[styles.shoppingItemName, { color: palette.textPrimary }]} numberOfLines={1}>
+                                {item.name}
+                              </Text>
+                              <Text style={[styles.shoppingItemQty, { color: palette.textSecondary }]}>
+                                {item.quantity} {item.unit}
+                              </Text>
+                            </View>
+                          ))
+                        )}
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
 
       </ScrollView>
 
@@ -483,6 +595,73 @@ export default function HomeScreen() {
   );
 }
 
+
+const homeImageCache = new Map<string, string | null>();
+
+function ShoppingItemThumb({
+  name,
+  linkedImageUrl,
+  palette,
+}: {
+  name: string;
+  linkedImageUrl?: string;
+  palette: ReturnType<typeof useAppTheme>['palette'];
+}) {
+  const key = name.trim().toLowerCase();
+  const [imageUrl, setImageUrl] = useState<string | null | undefined>(
+    linkedImageUrl ?? (homeImageCache.has(key) ? homeImageCache.get(key) : undefined)
+  );
+
+  useEffect(() => {
+    if (linkedImageUrl || homeImageCache.has(key)) return;
+    let cancelled = false;
+    searchProductsByText(name)
+      .then((results) => {
+        const url = results[0]?.imageUrl ?? null;
+        homeImageCache.set(key, url);
+        if (!cancelled) setImageUrl(url);
+      })
+      .catch(() => {
+        homeImageCache.set(key, null);
+        if (!cancelled) setImageUrl(null);
+      });
+    return () => { cancelled = true; };
+  }, [key, linkedImageUrl, name]);
+
+  const url = linkedImageUrl ?? imageUrl;
+
+  if (url) {
+    return (
+      <View style={[thumbStyles.wrap, { borderColor: palette.border }]}>
+        <Image source={{ uri: url }} style={thumbStyles.image} contentFit="contain" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[thumbStyles.wrap, thumbStyles.placeholder, { backgroundColor: palette.glowSecondary, borderColor: palette.border }]}>
+      <IconSymbol name="cart" size={12} color={palette.accentPrimary} />
+    </View>
+  );
+}
+
+const thumbStyles = StyleSheet.create({
+  wrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  placeholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
 
 const styles = StyleSheet.create({
   root: {
@@ -790,6 +969,68 @@ const styles = StyleSheet.create({
   shoppingSubtitle: {
     fontSize: 13,
     fontWeight: '400',
+  },
+
+  /* ── Shopping card (home) ── */
+  shoppingListsWrap: {
+    gap: 10,
+  },
+  shoppingCard: {
+    borderRadius: 20,
+    padding: 16,
+    gap: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  shoppingCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  shoppingCardHeaderMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  shoppingExpandBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shoppingItemsList: {
+    gap: 6,
+  },
+  shoppingItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  shoppingItemDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  shoppingItemName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  shoppingItemQty: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  shoppingMore: {
+    fontSize: 12,
+    fontWeight: '400',
+    paddingTop: 2,
   },
 
   /* ── Empty state ── */

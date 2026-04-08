@@ -2,6 +2,7 @@ import { ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { AppSettingsProvider } from '@/providers/app-settings-provider';
@@ -36,20 +37,22 @@ function RootNavigator() {
 
 export default function RootLayout() {
   return (
-    <AppThemeProvider>
-      <AppSettingsProvider>
-        <InventoryProvider>
-          <ShoppingListsProvider>
-            <KeyboardAvoidingView
-              style={styles.keyboardAvoidingRoot}
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              keyboardVerticalOffset={0}>
-              <RootNavigator />
-            </KeyboardAvoidingView>
-          </ShoppingListsProvider>
-        </InventoryProvider>
-      </AppSettingsProvider>
-    </AppThemeProvider>
+    <GestureHandlerRootView style={styles.keyboardAvoidingRoot}>
+      <AppThemeProvider>
+        <AppSettingsProvider>
+          <InventoryProvider>
+            <ShoppingListsProvider>
+              <KeyboardAvoidingView
+                style={styles.keyboardAvoidingRoot}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                keyboardVerticalOffset={0}>
+                <RootNavigator />
+              </KeyboardAvoidingView>
+            </ShoppingListsProvider>
+          </InventoryProvider>
+        </AppSettingsProvider>
+      </AppThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 

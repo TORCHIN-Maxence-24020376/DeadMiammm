@@ -313,6 +313,12 @@ export function ShoppingListsProvider({ children }: { children: React.ReactNode 
         return list;
       });
 
+      const remainingActive = updatedLists.filter((l) => l.status === 'active');
+      if (remainingActive.length > 0) {
+        await persist(updatedLists);
+        return remainingActive[0];
+      }
+
       const newList = createListRecord();
       await persist([newList, ...updatedLists]);
       return newList;

@@ -1,8 +1,10 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, LayoutAnimation, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, UIManager, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { searchProductsByText } from '@/services/open-food-facts';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,6 +29,7 @@ function cacheKeyForName(name: string) {
 
 export default function ShoppingListsScreen() {
   const router = useRouter();
+  const { listId: paramListId, edit: paramEdit } = useLocalSearchParams<{ listId?: string; edit?: string }>();
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
   const { products } = useInventory();
@@ -45,6 +48,7 @@ export default function ShoppingListsScreen() {
   } = useShoppingLists();
 
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  const [expandedActiveListId, setExpandedActiveListId] = useState<string | null>(null);
   const [expandedArchivedListId, setExpandedArchivedListId] = useState<string | null>(null);
   const [isEditMenuOpen, setIsEditMenuOpen] = useState(false);
   const [unavailableModal, setUnavailableModal] = useState<{
@@ -234,6 +238,14 @@ export default function ShoppingListsScreen() {
   useEffect(() => {
     setRenameInput(selectedList?.name ?? '');
   }, [selectedList?.id, selectedList?.name]);
+
+  useEffect(() => {
+    if (!paramListId || isHydrating) return;
+    setSelectedListId(paramListId);
+    if (paramEdit === '1') {
+      setIsEditMenuOpen(true);
+    }
+  }, [paramListId, paramEdit, isHydrating]);
 
   const togglePurchased = async (item: ShoppingListItem) => {
     if (!selectedList || selectedList.status !== 'active') {
@@ -466,6 +478,13 @@ export default function ShoppingListsScreen() {
           selectedListId={selectedListId}
           onSelectList={setSelectedListId}
           palette={palette}
+          expandedListId={expandedActiveListId}
+          onToggleExpand={(id) => setExpandedActiveListId((prev) => (prev === id ? null : id))}
+          productById={productById}
+          onEditList={(listId) => {
+            setSelectedListId(listId);
+            openEditMenu();
+          }}
           onCreateList={async (name) => {
             const created = await createList(name || undefined);
             setSelectedListId(created.id);
@@ -493,6 +512,10 @@ export default function ShoppingListsScreen() {
           expandedListId={expandedArchivedListId}
           onToggleExpand={(id) => setExpandedArchivedListId((prev) => (prev === id ? null : id))}
           productById={productById}
+          onEditList={(listId) => {
+            setSelectedListId(listId);
+            openEditMenu();
+          }}
           onDeleteList={(listId) => {
             const list = lists.find((l) => l.id === listId);
             Alert.alert(
@@ -512,10 +535,7 @@ export default function ShoppingListsScreen() {
               <View style={styles.listHeaderText}>
                 <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>{selectedList.name}</Text>
                 <Text style={[Typography.caption, { color: palette.textSecondary }]}>
-                  {selectedListStats.completed}/{selectedListStats.total} complétés ({selectedListStats.bought} achetés,
-                  {' '}
-                  {selectedListStats.unavailable} indisponibles) • {selectedListStats.remaining} restant
-                  {selectedListStats.remaining > 1 ? 's' : ''} • Mis à jour le {formatShortDate(selectedList.updatedAt)}
+                  {selectedListStats.completed}/{selectedListStats.total} complétés
                 </Text>
               </View>
 
@@ -569,49 +589,20 @@ export default function ShoppingListsScreen() {
               </Pressable>
             )}
 
-            <View style={styles.rowActions}>
-              <Pressable
-                onPress={() => setShowOnlyRemaining((previous) => !previous)}
-                style={({ pressed }) => [
-                  styles.secondaryAction,
-                  {
-                    backgroundColor: showOnlyRemaining
-                      ? palette.accentPrimary
-                      : pressed
-                        ? palette.surfacePressed
-                        : palette.surfaceSoft,
-                    borderColor: palette.border,
-                  },
-                ]}>
-                <Text
-                  style={[
-                    Typography.labelSm,
-                    {
-                      color: showOnlyRemaining ? palette.textInverse : palette.textPrimary,
-                    },
-                  ]}>
-                  {showOnlyRemaining ? 'Afficher tout' : 'Afficher restant'}
-                </Text>
-              </Pressable>
-
-              <View style={[styles.remainingBadge, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
-                <Text style={[Typography.labelSm, { color: palette.textPrimary }]}>
-                  {selectedListStats.remaining} restant{selectedListStats.remaining > 1 ? 's' : ''}
-                </Text>
-              </View>
-            </View>
-
-            {visibleChecklistItems.length === 0 ? (
+            {sortedSelectedItems.length === 0 ? (
               <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-                {showOnlyRemaining
-                  ? 'Tout est coché. Tu peux afficher tout pour revoir la liste complète.'
-                  : 'Cette liste est vide.'}
+                Cette liste est vide.
               </Text>
             ) : (
               <View style={styles.itemsWrap}>
-                {visibleChecklistItems.map((item) => (
-                  <View
+                {sortedSelectedItems.map((item) => (
+                  <SwipeableItemRow
                     key={item.id}
+                    onSwipeRight={() => togglePurchased(item)}
+                    onSwipeLeft={() => toggleUnavailable(item)}
+                    palette={palette}
+                    disabled={selectedList.status !== 'active'}>
+                  <View
                     style={[
                       styles.itemRow,
                       {
@@ -622,25 +613,6 @@ export default function ShoppingListsScreen() {
                     ]}>
 
                     <View style={[styles.itemStateRow, { borderBottomColor: palette.border }]}>
-                      <Pressable
-                        onPress={() => togglePurchased(item)}
-                        disabled={selectedList.status !== 'active'}
-                        style={({ pressed }) => [
-                          styles.itemStateChip,
-                          {
-                            backgroundColor: item.isChecked
-                              ? palette.success
-                              : pressed ? palette.surfacePressed : palette.surface,
-                            borderColor: item.isChecked ? palette.success : palette.border,
-                            opacity: selectedList.status === 'active' ? 1 : 0.45,
-                          },
-                        ]}>
-                        <IconSymbol name={item.isChecked ? 'checkmark.circle.fill' : 'circle'} size={15} color={item.isChecked ? palette.textInverse : palette.textTertiary} />
-                        <Text style={[Typography.labelSm, { color: item.isChecked ? palette.textInverse : palette.textTertiary }]}>
-                          Trouvé
-                        </Text>
-                      </Pressable>
-
                       <Pressable
                         onPress={() => toggleUnavailable(item)}
                         disabled={selectedList.status !== 'active'}
@@ -657,6 +629,25 @@ export default function ShoppingListsScreen() {
                         <IconSymbol name="xmark" size={13} color={item.isUnavailable ? palette.textInverse : palette.danger} />
                         <Text style={[Typography.labelSm, { color: item.isUnavailable ? palette.textInverse : palette.danger }]}>
                           Non trouvé
+                        </Text>
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => togglePurchased(item)}
+                        disabled={selectedList.status !== 'active'}
+                        style={({ pressed }) => [
+                          styles.itemStateChip,
+                          {
+                            backgroundColor: item.isChecked
+                              ? palette.success
+                              : pressed ? palette.surfacePressed : palette.surface,
+                            borderColor: item.isChecked ? palette.success : palette.border,
+                            opacity: selectedList.status === 'active' ? 1 : 0.45,
+                          },
+                        ]}>
+                        <IconSymbol name={item.isChecked ? 'checkmark.circle.fill' : 'circle'} size={15} color={item.isChecked ? palette.textInverse : palette.textTertiary} />
+                        <Text style={[Typography.labelSm, { color: item.isChecked ? palette.textInverse : palette.textTertiary }]}>
+                          Trouvé
                         </Text>
                       </Pressable>
                     </View>
@@ -724,15 +715,11 @@ export default function ShoppingListsScreen() {
                     </View>
 
                   </View>
+                  </SwipeableItemRow>
                 ))}
               </View>
             )}
 
-            <Text style={[Typography.caption, { color: palette.textSecondary }]}>
-              {selectedList.status === 'active'
-                ? 'Vert: acheté • Rouge: indisponible. Les deux comptent dans la progression.'
-                : 'Liste en lecture seule. Utilise le menu d’édition pour la rouvrir.'}
-            </Text>
           </View>
         ) : (
           <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
@@ -1185,6 +1172,104 @@ export default function ShoppingListsScreen() {
   }
 }
 
+const SWIPE_THRESHOLD = 64;
+
+function SwipeableItemRow({
+  children,
+  onSwipeRight,
+  onSwipeLeft,
+  palette,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onSwipeRight: () => void;
+  onSwipeLeft: () => void;
+  palette: ReturnType<typeof useAppTheme>['palette'];
+  disabled?: boolean;
+}) {
+  const translateX = useSharedValue(0);
+
+  const pan = Gesture.Pan()
+    .enabled(!disabled)
+    .activeOffsetX([-12, 12])
+    .failOffsetY([-8, 8])
+    .onUpdate((e) => {
+      translateX.value = e.translationX;
+    })
+    .onEnd((e) => {
+      if (e.translationX > SWIPE_THRESHOLD) runOnJS(onSwipeRight)();
+      else if (e.translationX < -SWIPE_THRESHOLD) runOnJS(onSwipeLeft)();
+      translateX.value = withSpring(0, { damping: 18, stiffness: 180 });
+    })
+    .onFinalize(() => {
+      translateX.value = withSpring(0, { damping: 18, stiffness: 180 });
+    });
+
+  const rowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const greenOpacity = useAnimatedStyle(() => ({
+    opacity: Math.max(0, Math.min(1, translateX.value / SWIPE_THRESHOLD)),
+  }));
+
+  const redOpacity = useAnimatedStyle(() => ({
+    opacity: Math.max(0, Math.min(1, -translateX.value / SWIPE_THRESHOLD)),
+  }));
+
+  return (
+    <View style={{ overflow: 'hidden', borderRadius: 16 }}>
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: palette.success }, greenOpacity]}>
+        <View style={swipeStyles.hint}>
+          <View style={swipeStyles.hintIcon}><Text style={swipeStyles.hintEmoji}>✓</Text></View>
+          <Text style={[swipeStyles.hintLabel, { color: palette.textInverse }]}>Trouvé</Text>
+        </View>
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: palette.danger }, redOpacity]}>
+        <View style={[swipeStyles.hint, swipeStyles.hintRight]}>
+          <Text style={[swipeStyles.hintLabel, { color: palette.textInverse }]}>Non trouvé</Text>
+          <View style={swipeStyles.hintIcon}><Text style={swipeStyles.hintEmoji}>✕</Text></View>
+        </View>
+      </Animated.View>
+      <GestureDetector gesture={pan}>
+        <Animated.View style={rowStyle}>
+          {children}
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
+}
+
+const swipeStyles = StyleSheet.create({
+  hint: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  hintRight: {
+    justifyContent: 'flex-end',
+  },
+  hintIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hintEmoji: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  hintLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+});
+
 function ItemImage({
   item,
   imageUrl,
@@ -1240,6 +1325,7 @@ function ListsSection({
   productById,
   onCreateList,
   onDeleteList,
+  onEditList,
 }: {
   title: string;
   lists: ShoppingList[];
@@ -1251,8 +1337,10 @@ function ListsSection({
   productById?: Map<string, { imageUrl?: string }>;
   onCreateList?: (name: string) => void;
   onDeleteList?: (listId: string) => void;
+  onEditList?: (listId: string) => void;
 }) {
   const [createInput, setCreateInput] = useState('');
+  const lastPressRef = useRef<{ id: string; time: number } | null>(null);
 
   return (
     <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
@@ -1303,7 +1391,17 @@ function ListsSection({
             return (
               <View key={list.id}>
                 <Pressable
-                  onPress={() => onSelectList(list.id)}
+                  onPress={() => {
+                    const now = Date.now();
+                    const last = lastPressRef.current;
+                    if (last && last.id === list.id && now - last.time < 350 && onEditList) {
+                      lastPressRef.current = null;
+                      onEditList(list.id);
+                    } else {
+                      lastPressRef.current = { id: list.id, time: now };
+                      onSelectList(list.id);
+                    }
+                  }}
                   style={[
                     styles.listRow,
                     {
@@ -1328,24 +1426,20 @@ function ListsSection({
                         <IconSymbol name="trash.fill" size={12} color={palette.danger} />
                       </Pressable>
                     )}
-                    {onToggleExpand ? (
-                      <Pressable
-                        onPress={() => onToggleExpand(list.id)}
-                        hitSlop={10}
-                        style={[styles.expandButton, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-                        <IconSymbol
-                          name={isExpanded ? 'chevron.down' : 'chevron.right'}
-                          size={14}
-                          color={palette.textSecondary}
-                        />
-                      </Pressable>
-                    ) : (
-                      <IconSymbol name="chevron.right" size={14} color={palette.textSecondary} />
-                    )}
+                    <Pressable
+                      onPress={() => onToggleExpand ? onToggleExpand(list.id) : undefined}
+                      hitSlop={10}
+                      style={[styles.expandButton, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+                      <IconSymbol
+                        name={isExpanded ? 'chevron.down' : 'chevron.right'}
+                        size={14}
+                        color={palette.textSecondary}
+                      />
+                    </Pressable>
                   </View>
                 </Pressable>
 
-                {isExpanded && onToggleExpand && (
+                {isExpanded && (
                   <View style={[styles.archivedItemsWrap, { borderColor: palette.border }]}>
                     {list.items.length === 0 ? (
                       <Text style={[Typography.caption, { color: palette.textSecondary }]}>Aucun article.</Text>
@@ -1374,9 +1468,6 @@ function ListsSection({
                               {formatQuantity(item.quantity)} {item.unit}
                             </Text>
                           </View>
-                          <Text style={[Typography.caption, { color: item.isUnavailable ? palette.danger : palette.success }]}>
-                            {item.isUnavailable ? 'Pas trouvé' : 'Trouvé'}
-                          </Text>
                         </View>
                       ))
                     )}
@@ -1538,7 +1629,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   itemRow: {
-    borderRadius: 18,
+    borderRadius: 16,
     overflow: 'hidden',
     flexDirection: 'column',
     gap: 0,
