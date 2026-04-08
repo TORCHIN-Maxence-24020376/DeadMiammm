@@ -18,6 +18,11 @@ type ShoppingListsContextValue = {
   createList: (name?: string) => Promise<ShoppingList>;
   renameList: (listId: string, nextName: string) => Promise<void>;
   setListStatus: (listId: string, status: ShoppingListStatus) => Promise<void>;
+  archiveListAndStartFresh: (
+    listId: string,
+    reportItems?: Array<Pick<ShoppingListItem, 'name' | 'quantity' | 'unit' | 'linkedProductId'>>,
+    targetListId?: string
+  ) => Promise<ShoppingList>;
   deleteList: (listId: string) => Promise<void>;
   addItem: (input: AddShoppingListItemInput) => Promise<ShoppingListItem | null>;
   updateItem: (
@@ -277,6 +282,44 @@ export function ShoppingListsProvider({ children }: { children: React.ReactNode 
     [lists, persist]
   );
 
+  const archiveListAndStartFresh = useCallback(
+    async (
+      listId: string,
+      reportItems?: Array<Pick<ShoppingListItem, 'name' | 'quantity' | 'unit' | 'linkedProductId'>>,
+      targetListId?: string
+    ) => {
+      const now = new Date().toISOString();
+
+      const updatedLists = lists.map((list) => {
+        if (list.id === listId) {
+          return { ...list, status: 'done' as ShoppingListStatus, updatedAt: now };
+        }
+
+        if (targetListId && list.id === targetListId && reportItems && reportItems.length > 0) {
+          const newItems: ShoppingListItem[] = reportItems.map((item) => ({
+            id: createId(),
+            name: normalizeItemName(item.name) ?? item.name,
+            quantity: item.quantity,
+            unit: item.unit ?? DEFAULT_SHOPPING_ITEM_UNIT,
+            isChecked: false,
+            isUnavailable: false,
+            linkedProductId: item.linkedProductId ?? undefined,
+            createdAt: now,
+            updatedAt: now,
+          }));
+          return { ...list, items: [...newItems, ...list.items], updatedAt: now };
+        }
+
+        return list;
+      });
+
+      const newList = createListRecord();
+      await persist([newList, ...updatedLists]);
+      return newList;
+    },
+    [lists, persist]
+  );
+
   const value = useMemo<ShoppingListsContextValue>(
     () => ({
       lists,
@@ -284,13 +327,14 @@ export function ShoppingListsProvider({ children }: { children: React.ReactNode 
       createList,
       renameList,
       setListStatus,
+      archiveListAndStartFresh,
       deleteList,
       addItem,
       updateItem,
       removeItem,
       clearCheckedItems,
     }),
-    [addItem, clearCheckedItems, createList, deleteList, isHydrating, lists, removeItem, renameList, setListStatus, updateItem]
+    [addItem, archiveListAndStartFresh, clearCheckedItems, createList, deleteList, isHydrating, lists, removeItem, renameList, setListStatus, updateItem]
   );
 
   return <ShoppingListsContext.Provider value={value}>{children}</ShoppingListsContext.Provider>;
