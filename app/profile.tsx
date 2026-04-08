@@ -16,6 +16,7 @@ const actions = [
   },
   { key: 'theme', title: 'Réglage thème', subtitle: 'Auto, clair ou sombre', route: '/settings/theme', icon: 'circle.lefthalf.filled' },
   { key: 'notif', title: 'Préférences notifications', subtitle: 'Rappels et alertes produits', route: '/settings/notifications', icon: 'bell.badge' },
+  { key: 'history', title: 'History', subtitle: 'Recherches et scans mis en cache', route: '/settings/history', icon: 'clock.badge.exclamationmark' },
   { key: 'account', title: 'Compte et profil', subtitle: 'Informations personnelles', route: '/settings/account', icon: 'person.crop.circle' },
 ] as const;
 
