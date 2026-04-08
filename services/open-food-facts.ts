@@ -13,9 +13,13 @@ export type OpenFoodFactsProduct = {
   nutrition?: NutritionFacts;
 };
 
-export type OpenFoodFactsLocalDBSnapshot = {
-  updatedAt: string;
-  products: OpenFoodFactsProduct[];
+export type LocalDBHistoryEntry = {
+  id: string;
+  type: 'barcode' | 'search';
+  term: string;
+  label: string;
+  resultCount: number;
+  createdAt: string;
 };
 
 type ProductResponse = {
@@ -48,6 +52,7 @@ type LocalDBRecord = {
   updatedAt: string;
   products: Record<string, OpenFoodFactsProduct>;
   searches: Record<string, string[]>;
+  history: LocalDBHistoryEntry[];
 };
 
 type LocalDBPayload = {
@@ -55,6 +60,7 @@ type LocalDBPayload = {
   updatedAt?: unknown;
   products?: unknown;
   searches?: unknown;
+  history?: unknown;
 };
 
 const PRODUCT_FIELDS = [
@@ -73,7 +79,7 @@ const PRODUCT_FIELDS = [
 ].join(',');
 
 const LOCAL_DB_STORAGE_KEY = 'localDB';
-const LOCAL_DB_SCHEMA_VERSION = 1;
+const LOCAL_DB_SCHEMA_VERSION = 2;
 const LEGACY_PRODUCT_CACHE_STORAGE_KEY_PREFIX = 'deadmiammm.off-product-cache.v1.';
 const productMemoryCache = new Map<string, OpenFoodFactsProduct>();
 const searchMemoryCache = new Map<string, OpenFoodFactsProduct[]>();
@@ -85,6 +91,7 @@ const MAX_CATEGORIES = 80;
 const MAX_CATEGORY_LENGTH = 120;
 const MAX_NUTRITION_VALUE = 100_000;
 const MAX_SEARCH_RESULTS = 10;
+const MAX_HISTORY_ENTRIES = 50;
 
 export class OpenFoodFactsError extends Error {
   status: number;
@@ -141,7 +148,7 @@ export async function fetchProductByBarcode(barcode: string): Promise<OpenFoodFa
   }
 
   const normalizedProduct = normalizeProduct(payload.product, payload.code ?? normalizedBarcode);
-  await cacheProduct(normalizedProduct);
+  await cacheProduct(normalizedProduct, normalizedBarcode);
   return normalizedProduct;
 }
 
@@ -172,7 +179,7 @@ export async function searchProductsByText(query: string): Promise<OpenFoodFacts
 
   const payload = (await response.json()) as SearchResponse;
   if (!payload.products || payload.products.length === 0) {
-    await cacheProducts([], trimmedQuery);
+    await cacheProducts([], { query: trimmedQuery });
     return [];
   }
 
@@ -186,7 +193,7 @@ export async function searchProductsByText(query: string): Promise<OpenFoodFacts
     })
     .filter((product): product is OpenFoodFactsProduct => Boolean(product));
 
-  await cacheProducts(products, trimmedQuery);
+  await cacheProducts(products, { query: trimmedQuery });
   return products;
 }
 
@@ -209,17 +216,12 @@ export async function getOpenFoodFactsProductCacheCount() {
   return Object.keys(localDB.products).length;
 }
 
-export async function getOpenFoodFactsLocalDBSnapshot(): Promise<OpenFoodFactsLocalDBSnapshot> {
+export async function getOpenFoodFactsLocalDBHistory() {
   const localDB = await readLocalDB();
-  const products = Object.values(localDB.products).sort((left, right) => left.name.localeCompare(right.name, 'fr'));
-
-  return {
-    updatedAt: localDB.updatedAt,
-    products,
-  };
+  return localDB.history;
 }
 
-async function cacheProducts(products: OpenFoodFactsProduct[], query?: string) {
+async function cacheProducts(products: OpenFoodFactsProduct[], options?: { query?: string; barcode?: string }) {
   const dedupedProducts = dedupeProductsByBarcode(products)
     .map((product) => sanitizeCachedProduct(product, product.barcode))
     .filter((product): product is OpenFoodFactsProduct => Boolean(product));
@@ -231,19 +233,24 @@ async function cacheProducts(products: OpenFoodFactsProduct[], query?: string) {
     productMemoryCache.set(product.barcode, product);
   }
 
-  const normalizedQuery = query ? toSearchKey(query) : '';
+  const normalizedQuery = options?.query ? toSearchKey(options.query) : '';
   if (normalizedQuery) {
     const barcodes = dedupedProducts.map((product) => product.barcode);
     localDB.searches[normalizedQuery] = barcodes;
     searchMemoryCache.set(normalizedQuery, dedupedProducts);
   }
 
+  const historyEntry = buildHistoryEntry(dedupedProducts, options);
+  if (historyEntry) {
+    localDB.history = appendHistoryEntry(localDB.history, historyEntry);
+  }
+
   localDB.updatedAt = new Date().toISOString();
   await persistLocalDB(localDB);
 }
 
-async function cacheProduct(product: OpenFoodFactsProduct) {
-  await cacheProducts([product]);
+async function cacheProduct(product: OpenFoodFactsProduct, barcode?: string) {
+  await cacheProducts([product], { barcode });
 }
 
 async function readCachedProduct(barcode: string) {
@@ -368,6 +375,7 @@ function createEmptyLocalDB(): LocalDBRecord {
     updatedAt: new Date().toISOString(),
     products: {},
     searches: {},
+    history: [],
   };
 }
 
@@ -377,6 +385,7 @@ function sanitizeLocalDBRecord(value: unknown): LocalDBRecord {
     candidate.products && typeof candidate.products === 'object' ? (candidate.products as Record<string, unknown>) : {};
   const rawSearches =
     candidate.searches && typeof candidate.searches === 'object' ? (candidate.searches as Record<string, unknown>) : {};
+  const rawHistory = Array.isArray(candidate.history) ? candidate.history : [];
 
   const products: Record<string, OpenFoodFactsProduct> = {};
 
@@ -417,11 +426,17 @@ function sanitizeLocalDBRecord(value: unknown): LocalDBRecord {
     searches[normalizedQuery] = normalizedBarcodes;
   }
 
+  const history = rawHistory
+    .map((entry) => sanitizeHistoryEntry(entry))
+    .filter((entry): entry is LocalDBHistoryEntry => Boolean(entry))
+    .slice(0, MAX_HISTORY_ENTRIES);
+
   return {
     version: LOCAL_DB_SCHEMA_VERSION,
     updatedAt: isValidDateTimeString(candidate.updatedAt) ? candidate.updatedAt : new Date().toISOString(),
     products,
     searches,
+    history,
   };
 }
 
@@ -446,6 +461,73 @@ function removeBarcodeFromSearchIndexes(searches: Record<string, string[]>, barc
     const filtered = barcodes.filter((item) => item !== barcode);
     searches[query] = filtered;
   }
+}
+
+function buildHistoryEntry(products: OpenFoodFactsProduct[], options?: { query?: string; barcode?: string }): LocalDBHistoryEntry | null {
+  const normalizedQuery = normalizeString(options?.query);
+  if (normalizedQuery) {
+    return {
+      id: `search:${toSearchKey(normalizedQuery)}:${Date.now()}`,
+      type: 'search',
+      term: normalizedQuery,
+      label: normalizedQuery,
+      resultCount: products.length,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  const normalizedBarcode = normalizeString(options?.barcode);
+  const firstProduct = products[0];
+  if (normalizedBarcode && firstProduct) {
+    return {
+      id: `barcode:${normalizedBarcode}:${Date.now()}`,
+      type: 'barcode',
+      term: normalizedBarcode,
+      label: firstProduct.name,
+      resultCount: 1,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  return null;
+}
+
+function appendHistoryEntry(history: LocalDBHistoryEntry[], nextEntry: LocalDBHistoryEntry) {
+  return [nextEntry, ...history.filter((entry) => !(entry.type === nextEntry.type && entry.term === nextEntry.term))].slice(
+    0,
+    MAX_HISTORY_ENTRIES
+  );
+}
+
+function sanitizeHistoryEntry(value: unknown): LocalDBHistoryEntry | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<LocalDBHistoryEntry>;
+  const type = candidate.type === 'barcode' || candidate.type === 'search' ? candidate.type : null;
+  const term = normalizeString(candidate.term);
+  const label = sanitizeLabel(candidate.label);
+  const createdAt = isValidDateTimeString(candidate.createdAt) ? candidate.createdAt : null;
+  const resultCount =
+    typeof candidate.resultCount === 'number' && Number.isFinite(candidate.resultCount) && candidate.resultCount >= 0
+      ? Math.round(candidate.resultCount)
+      : null;
+
+  if (!type || !term || !label || !createdAt || resultCount === null) {
+    return null;
+  }
+
+  const normalizedId = normalizeString(candidate.id) ?? `${type}:${term}:${createdAt}`;
+
+  return {
+    id: normalizedId,
+    type,
+    term,
+    label,
+    resultCount,
+    createdAt,
+  };
 }
 
 function dedupeStrings(values: string[]) {
