@@ -14,6 +14,13 @@ const actions = [
     route: '/settings/inventory',
     icon: 'slider.horizontal.3',
   },
+  {
+    key: 'history',
+    title: 'Historique local',
+    subtitle: 'Produits scannes et caches localement',
+    route: '/settings/history',
+    icon: 'clock.arrow.circlepath',
+  },
   { key: 'theme', title: 'Réglage thème', subtitle: 'Auto, clair ou sombre', route: '/settings/theme', icon: 'circle.lefthalf.filled' },
   { key: 'notif', title: 'Préférences notifications', subtitle: 'Rappels et alertes produits', route: '/settings/notifications', icon: 'bell.badge' },
   { key: 'account', title: 'Compte et profil', subtitle: 'Informations personnelles', route: '/settings/account', icon: 'person.crop.circle' },

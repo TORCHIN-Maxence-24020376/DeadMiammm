@@ -28,6 +28,7 @@ function RootNavigator() {
         <Stack.Screen name="settings/account" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/theme" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="settings/inventory" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="settings/history" options={{ animation: 'slide_from_right' }} />
       </Stack>
       <StatusBar style={resolvedTheme === 'dark' ? 'light' : 'dark'} />
     </ThemeProvider>

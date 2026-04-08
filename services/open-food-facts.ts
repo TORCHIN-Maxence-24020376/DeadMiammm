@@ -13,6 +13,11 @@ export type OpenFoodFactsProduct = {
   nutrition?: NutritionFacts;
 };
 
+export type OpenFoodFactsLocalDBSnapshot = {
+  updatedAt: string;
+  products: OpenFoodFactsProduct[];
+};
+
 type ProductResponse = {
   status: number;
   code?: string;
@@ -202,6 +207,16 @@ export async function clearOpenFoodFactsProductCache() {
 export async function getOpenFoodFactsProductCacheCount() {
   const localDB = await readLocalDB();
   return Object.keys(localDB.products).length;
+}
+
+export async function getOpenFoodFactsLocalDBSnapshot(): Promise<OpenFoodFactsLocalDBSnapshot> {
+  const localDB = await readLocalDB();
+  const products = Object.values(localDB.products).sort((left, right) => left.name.localeCompare(right.name, 'fr'));
+
+  return {
+    updatedAt: localDB.updatedAt,
+    products,
+  };
 }
 
 async function cacheProducts(products: OpenFoodFactsProduct[], query?: string) {
