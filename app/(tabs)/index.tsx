@@ -436,7 +436,7 @@ export default function HomeScreen() {
         {/* Home (gauche) */}
         <Pressable
           onPress={() => { Haptics.selectionAsync(); scrollRef.current?.scrollTo({ y: 0, animated: true }); }}
-          style={({ pressed }) => [styles.bottomTabBtn, { opacity: pressed ? 0.7 : 1 }]}>
+          style={({ pressed }) => [styles.bottomTabBtn, { backgroundColor: pressed ? palette.surfacePressed : 'transparent' }]}>
           <IconSymbol name="house.fill" size={24} color={palette.accentPrimary} />
           <Text style={[styles.bottomTabLabel, { color: palette.accentPrimary }]}>Home</Text>
         </Pressable>
@@ -461,7 +461,7 @@ export default function HomeScreen() {
         {/* Zones (droite) */}
         <Pressable
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setIsListMenuOpen(true); }}
-          style={({ pressed }) => [styles.bottomTabBtn, { opacity: pressed ? 0.7 : 1 }]}>
+          style={({ pressed }) => [styles.bottomTabBtn, { backgroundColor: pressed ? palette.surfacePressed : 'transparent' }]}>
           <IconSymbol name="square.grid.2x2.fill" size={24} color={palette.accentPrimary} />
           <Text style={[styles.bottomTabLabel, { color: palette.accentPrimary }]}>Zones</Text>
         </Pressable>
@@ -834,8 +834,9 @@ const styles = StyleSheet.create({
   bottomTabBtn: {
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
   },
   bottomSpacer: {
     width: 45,
