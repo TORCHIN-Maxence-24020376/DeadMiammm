@@ -7,9 +7,9 @@ import { ThemeMode, Typography } from '@/constants/theme';
 import { useAppTheme } from '@/providers/theme-provider';
 
 const modes: { key: ThemeMode; title: string; subtitle: string }[] = [
-  { key: 'system', title: 'Automatique', subtitle: 'Suit le thème de l’appareil' },
-  { key: 'light', title: 'Clair', subtitle: 'Interface lumineuse iOS' },
-  { key: 'dark', title: 'Sombre', subtitle: 'Interface sombre premium' },
+  { key: 'system', title: 'Automatique', subtitle: 'Suit le thème du téléphone' },
+  { key: 'light', title: 'Clair', subtitle: 'Version claire de l’app' },
+  { key: 'dark', title: 'Sombre', subtitle: 'Version sombre de l’app' },
 ];
 
 export default function ThemeSettingsScreen() {
@@ -17,20 +17,22 @@ export default function ThemeSettingsScreen() {
   const { palette, mode, setMode, resolvedTheme } = useAppTheme();
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}> 
-      <View style={[styles.header, { borderBottomColor: palette.border }]}> 
-        <Pressable onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: palette.surfaceSoft }]}> 
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}>
+      <View style={[styles.header, { borderBottomColor: palette.border }]}>
+        <Pressable onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: palette.surfaceSoft }]}>
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
-        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Réglage thème</Text>
+        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Apparence</Text>
 
         <View style={styles.iconButton} />
       </View>
 
       <View style={styles.content}>
-        <View style={[styles.currentBadge, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}> 
-          <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Thème actif: {resolvedTheme === 'dark' ? 'Sombre' : 'Clair'}</Text>
+        <View style={[styles.currentBadge, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+          <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>
+            Thème actif : {resolvedTheme === 'dark' ? 'Sombre' : 'Clair'}
+          </Text>
         </View>
 
         <View style={styles.rows}>

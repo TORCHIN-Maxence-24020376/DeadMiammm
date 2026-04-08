@@ -22,17 +22,17 @@ export default function NotificationSettingsScreen() {
     {
       key: 'expiring',
       title: 'Produits proches de la date',
-      subtitle: `Alerte pour les produits à ${expiringSoonDays} jour${expiringSoonDays > 1 ? 's' : ''} ou moins`,
+      subtitle: `Rappel pour les produits à ${expiringSoonDays} jour${expiringSoonDays > 1 ? 's' : ''} ou moins`,
     },
     {
       key: 'lowStock',
       title: 'Stock faible',
-      subtitle: `Notification quand quantité <= ${lowStockThreshold}`,
+      subtitle: `Prévenir quand il reste ${lowStockThreshold} unité${lowStockThreshold > 1 ? 's' : ''} ou moins`,
     },
     {
       key: 'recipes',
       title: 'Idées recettes',
-      subtitle: 'Suggestion de recettes anti-gaspi',
+      subtitle: 'Petites idées pour éviter de laisser traîner',
     },
   ];
 
@@ -51,7 +51,7 @@ export default function NotificationSettingsScreen() {
       <View style={styles.content}>
         <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Ajuste les alertes qui t’aident au quotidien sans surcharge.
+            Garde seulement les alertes qui te servent vraiment.
           </Text>
         </View>
 

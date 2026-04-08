@@ -48,30 +48,26 @@ export default function AccountSettingsScreen() {
 
   const onResetInventory = () => {
     if (products.length === 0) {
-      Alert.alert('Inventaire déjà vide', 'Aucun produit à supprimer.');
+      Alert.alert('Inventaire déjà vide', 'Il n’y a rien à supprimer.');
       return;
     }
 
-    Alert.alert(
-      'Réinitialiser l’inventaire ?',
-      `Cette action supprimera ${products.length} produit(s) enregistrés localement.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Tout supprimer',
-          style: 'destructive',
-          onPress: () => {
-            void handleReset();
-          },
+    Alert.alert('Vider l’inventaire ?', `Cette action supprimera ${products.length} produit(s) enregistrés sur cet appareil.`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Tout supprimer',
+        style: 'destructive',
+        onPress: () => {
+          void handleReset();
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const onClearProductCache = () => {
     const count = cacheEntriesCount ?? 0;
     if (count === 0) {
-      Alert.alert('Cache déjà vide', 'Aucune entrée de cache à supprimer.');
+      Alert.alert('Cache déjà vide', 'Il n’y a rien à supprimer.');
       return;
     }
 
@@ -94,14 +90,14 @@ export default function AccountSettingsScreen() {
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
-        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Compte et profil</Text>
+        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Compte et données</Text>
 
         <View style={styles.iconButton} />
       </View>
 
       <View style={styles.content}>
         <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Résumé local</Text>
+          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Vue d’ensemble locale</Text>
 
           <View style={styles.statsWrap}>
             <StatPill label="Produits" value={String(stats.total)} palette={palette} />
@@ -114,7 +110,7 @@ export default function AccountSettingsScreen() {
         <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Maintenance</Text>
           <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Nettoie l’application en repartant d’un inventaire vide.
+            Tu peux repartir de zéro en vidant le cache ou l’inventaire local.
           </Text>
 
           <View style={styles.maintenanceActions}>
@@ -131,7 +127,7 @@ export default function AccountSettingsScreen() {
               ]}>
               <IconSymbol name="trash.fill" size={14} color={palette.textPrimary} />
               <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>
-                {isClearingCache ? 'Suppression du cache…' : 'Vider le cache produits API'}
+                {isClearingCache ? 'Suppression du cache…' : 'Vider le cache OpenFoodFacts'}
               </Text>
             </Pressable>
 
@@ -158,7 +154,7 @@ export default function AccountSettingsScreen() {
       const updatedCount = await getOpenFoodFactsProductCacheCount();
       setCacheEntriesCount(updatedCount);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Cache vidé', 'Le cache local OpenFoodFacts a été supprimé.');
+      Alert.alert('Cache vidé', 'Le cache local OpenFoodFacts a bien été supprimé.');
     } catch (error) {
       console.warn('OpenFoodFacts cache clear failed:', error);
       Alert.alert('Erreur', 'Impossible de vider le cache pour le moment.');

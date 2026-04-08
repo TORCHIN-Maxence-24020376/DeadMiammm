@@ -3,12 +3,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { HistoryLogo } from '@/components/ui/history-logo';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Typography } from '@/constants/theme';
+import { type InventoryProduct } from '@/data/inventory';
 import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
-import { getOpenFoodFactsLocalDBSnapshot, OpenFoodFactsProduct } from '@/services/open-food-facts';
-import { formatFullDate } from '@/utils/format';
+import {
+  getOpenFoodFactsLocalDBSnapshot,
+  type OpenFoodFactsLocalDBSnapshot,
+  type OpenFoodFactsProduct,
+} from '@/services/open-food-facts';
+import { formatFullDate, zoneLabel } from '@/utils/format';
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('fr-FR', {
   day: '2-digit',
@@ -22,41 +28,41 @@ export default function HistorySettingsScreen() {
   const router = useRouter();
   const { palette } = useAppTheme();
   const { products } = useInventory();
-  const [cachedProducts, setCachedProducts] = useState<OpenFoodFactsProduct[]>([]);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<OpenFoodFactsLocalDBSnapshot | null>(null);
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(true);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
 
   const scannedProducts = useMemo(() => {
-    return [...products].filter((product) => product.source === 'scan').sort((left, right) => right.addedAt.localeCompare(left.addedAt));
+    return [...products]
+      .filter((product) => product.source === 'scan')
+      .sort((left, right) => right.addedAt.localeCompare(left.addedAt));
   }, [products]);
 
   useEffect(() => {
     let isMounted = true;
 
-    const hydrate = async () => {
+    const loadSnapshot = async () => {
+      setIsLoadingSnapshot(true);
+      setSnapshotError(null);
+
       try {
-        const snapshot = await getOpenFoodFactsLocalDBSnapshot();
-        if (!isMounted) {
-          return;
+        const nextSnapshot = await getOpenFoodFactsLocalDBSnapshot();
+        if (isMounted) {
+          setSnapshot(nextSnapshot);
         }
-
-        setCachedProducts(snapshot.products);
-        setUpdatedAt(snapshot.updatedAt);
-      } catch {
-        if (!isMounted) {
-          return;
+      } catch (error) {
+        console.warn('History snapshot load failed:', error);
+        if (isMounted) {
+          setSnapshotError('Impossible de charger l’historique pour le moment.');
         }
-
-        setError('Impossible de charger l historique local.');
       } finally {
         if (isMounted) {
-          setIsLoading(false);
+          setIsLoadingSnapshot(false);
         }
       }
     };
 
-    void hydrate();
+    void loadSnapshot();
 
     return () => {
       isMounted = false;
@@ -70,74 +76,174 @@ export default function HistorySettingsScreen() {
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
-        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Historique local</Text>
+        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Historique</Text>
 
         <View style={styles.iconButton} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Cache localDB OpenFoodFacts</Text>
-          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            {updatedAt ? `Derniere mise a jour: ${DATE_TIME_FORMATTER.format(new Date(updatedAt))}` : 'Aucune mise a jour enregistree'}
-          </Text>
-          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{cachedProducts.length} produit(s) en cache</Text>
+        <View style={[styles.heroCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <HistoryLogo
+            size={54}
+            primaryColor={palette.accentPrimary}
+            secondaryColor={palette.accentSecondary}
+            highlightColor={palette.highlightEdge}
+          />
+
+          <View style={styles.heroText}>
+            <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Historique local</Text>
+            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+              Tu retrouves ici les produits déjà scannés et ceux gardés dans le cache local.
+            </Text>
+          </View>
         </View>
 
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Produits scannes dans l inventaire</Text>
-          <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{scannedProducts.length} produit(s)</Text>
-          {scannedProducts.length === 0 ? (
-            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Aucun produit scanne enregistre.</Text>
-          ) : (
-            <View style={styles.list}>
-              {scannedProducts.map((product) => (
-                <View key={product.id} style={[styles.row, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
-                  <View style={styles.rowMain}>
-                    <Text style={[Typography.labelMd, { color: palette.textPrimary }]} numberOfLines={1}>
-                      {product.name}
-                    </Text>
-                    <Text style={[Typography.caption, { color: palette.textSecondary }]}>
-                      Quantite: {product.quantity} {product.unit}
-                    </Text>
-                  </View>
-                  <Text style={[Typography.caption, { color: palette.textSecondary }]}>
-                    {product.expiresAt ? formatFullDate(product.expiresAt) : 'Sans date'}
-                  </Text>
-                </View>
-              ))}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Produits scannés</Text>
+            <View style={[styles.countPill, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+              <Text style={[Typography.caption, { color: palette.textSecondary }]}>{scannedProducts.length}</Text>
             </View>
+          </View>
+
+          {scannedProducts.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                Aucun produit scanné n’a encore été enregistré.
+              </Text>
+            </View>
+          ) : (
+            scannedProducts.map((product) => (
+              <InventoryHistoryCard key={product.id} product={product} palette={palette} />
+            ))
           )}
         </View>
 
-        <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Produits en cache OpenFoodFacts</Text>
-          {isLoading ? <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Chargement...</Text> : null}
-          {error ? <Text style={[Typography.bodySm, { color: palette.danger }]}>{error}</Text> : null}
-          {!isLoading && !error && cachedProducts.length === 0 ? (
-            <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Aucun produit en cache localDB.</Text>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Cache OpenFoodFacts</Text>
+            <View style={[styles.countPill, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+              <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+                {snapshot?.products.length ?? 0}
+              </Text>
+            </View>
+          </View>
+
+          {snapshot?.updatedAt ? (
+            <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+              Mis à jour le {formatDateTime(snapshot.updatedAt)}
+            </Text>
           ) : null}
-          {!isLoading && !error && cachedProducts.length > 0 ? (
-            <View style={styles.list}>
-              {cachedProducts.map((product) => (
-                <View key={product.barcode} style={[styles.row, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
-                  <View style={styles.rowMain}>
-                    <Text style={[Typography.labelMd, { color: palette.textPrimary }]} numberOfLines={1}>
-                      {product.name}
-                    </Text>
-                    <Text style={[Typography.caption, { color: palette.textSecondary }]} numberOfLines={1}>
-                      {product.categoryLabel ?? 'Categorie non renseignee'}
-                    </Text>
-                  </View>
-                  <Text style={[Typography.caption, { color: palette.textSecondary }]}>{product.barcode}</Text>
-                </View>
-              ))}
+
+          {isLoadingSnapshot ? (
+            <View style={[styles.emptyCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Chargement du cache local…</Text>
             </View>
           ) : null}
+
+          {!isLoadingSnapshot && snapshotError ? (
+            <View style={[styles.emptyCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>{snapshotError}</Text>
+            </View>
+          ) : null}
+
+          {!isLoadingSnapshot && !snapshotError && snapshot && snapshot.products.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                Le cache est encore vide pour le moment.
+              </Text>
+            </View>
+          ) : null}
+
+          {!isLoadingSnapshot && !snapshotError
+            ? snapshot?.products.map((product) => (
+                <CacheHistoryCard key={product.barcode} product={product} palette={palette} />
+              ))
+            : null}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function InventoryHistoryCard({
+  product,
+  palette,
+}: {
+  product: InventoryProduct;
+  palette: ReturnType<typeof useAppTheme>['palette'];
+}) {
+  return (
+    <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+      <View style={styles.cardTop}>
+        <Text style={[Typography.labelLg, styles.cardTitle, { color: palette.textPrimary }]} numberOfLines={1}>
+          {product.name}
+        </Text>
+        <Text style={[Typography.caption, { color: palette.textSecondary }]}>{formatDateTime(product.addedAt)}</Text>
+      </View>
+
+      <View style={styles.metaRow}>
+        <MetaPill label={`${product.quantity} ${product.unit}`} palette={palette} />
+        <MetaPill label={zoneLabel(product.zone)} palette={palette} />
+        {product.expiresAt ? <MetaPill label={`DL ${formatFullDate(product.expiresAt)}`} palette={palette} /> : null}
+      </View>
+
+      {product.barcode ? (
+        <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Code-barres : {product.barcode}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function CacheHistoryCard({
+  product,
+  palette,
+}: {
+  product: OpenFoodFactsProduct;
+  palette: ReturnType<typeof useAppTheme>['palette'];
+}) {
+  return (
+    <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+      <View style={styles.cardTop}>
+        <Text style={[Typography.labelLg, styles.cardTitle, { color: palette.textPrimary }]} numberOfLines={1}>
+          {product.name}
+        </Text>
+        <Text style={[Typography.caption, { color: palette.textSecondary }]}>{product.barcode}</Text>
+      </View>
+
+      <View style={styles.metaRow}>
+        {product.quantityLabel ? <MetaPill label={product.quantityLabel} palette={palette} /> : null}
+        <MetaPill label={zoneLabel(product.suggestedZone)} palette={palette} />
+      </View>
+
+      <Text style={[Typography.bodySm, { color: palette.textSecondary }]} numberOfLines={2}>
+        {product.categoryLabel || 'Produit gardé dans localDB.'}
+      </Text>
+    </View>
+  );
+}
+
+function MetaPill({
+  label,
+  palette,
+}: {
+  label: string;
+  palette: ReturnType<typeof useAppTheme>['palette'];
+}) {
+  return (
+    <View style={[styles.metaPill, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+      <Text style={[Typography.caption, { color: palette.textSecondary }]}>{label}</Text>
+    </View>
+  );
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Date inconnue';
+  }
+
+  return DATE_TIME_FORMATTER.format(date);
 }
 
 const styles = StyleSheet.create({
@@ -161,7 +267,42 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    gap: 16,
+  },
+  heroCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  heroText: {
+    flex: 1,
+    gap: 4,
+  },
+  section: {
     gap: 10,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  countPill: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  emptyCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 12,
   },
   card: {
     borderRadius: 18,
@@ -169,22 +310,26 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 8,
   },
-  list: {
-    gap: 8,
-  },
-  row: {
-    borderRadius: 12,
-    borderWidth: 1,
-    minHeight: 52,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+  cardTop: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     gap: 10,
   },
-  rowMain: {
+  cardTitle: {
     flex: 1,
-    gap: 2,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  metaPill: {
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

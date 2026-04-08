@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { HistoryLogo } from '@/components/ui/history-logo';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Typography } from '@/constants/theme';
 import { useAppTheme } from '@/providers/theme-provider';
@@ -9,21 +10,39 @@ import { useAppTheme } from '@/providers/theme-provider';
 const actions = [
   {
     key: 'inventory',
-    title: 'Inventaire intelligent',
-    subtitle: 'Seuils expiration et stock faible',
+    title: 'Inventaire',
+    subtitle: 'Dates limites et stock faible',
     route: '/settings/inventory',
     icon: 'slider.horizontal.3',
   },
   {
     key: 'history',
-    title: 'Historique local',
-    subtitle: 'Produits scannes et caches localement',
+    title: 'Historique',
+    subtitle: 'Produits scannés et cache local',
     route: '/settings/history',
     icon: 'clock.arrow.circlepath',
   },
-  { key: 'theme', title: 'Réglage thème', subtitle: 'Auto, clair ou sombre', route: '/settings/theme', icon: 'circle.lefthalf.filled' },
-  { key: 'notif', title: 'Préférences notifications', subtitle: 'Rappels et alertes produits', route: '/settings/notifications', icon: 'bell.badge' },
-  { key: 'account', title: 'Compte et profil', subtitle: 'Informations personnelles', route: '/settings/account', icon: 'person.crop.circle' },
+  {
+    key: 'theme',
+    title: 'Apparence',
+    subtitle: 'Clair, sombre ou automatique',
+    route: '/settings/theme',
+    icon: 'circle.lefthalf.filled',
+  },
+  {
+    key: 'notif',
+    title: 'Notifications',
+    subtitle: 'Rappels et alertes utiles',
+    route: '/settings/notifications',
+    icon: 'bell.badge',
+  },
+  {
+    key: 'account',
+    title: 'Compte et données',
+    subtitle: 'Profil, inventaire et cache',
+    route: '/settings/account',
+    icon: 'person.crop.circle',
+  },
 ] as const;
 
 export default function ProfileScreen() {
@@ -31,13 +50,13 @@ export default function ProfileScreen() {
   const { palette } = useAppTheme();
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}> 
-      <View style={[styles.header, { borderBottomColor: palette.border }]}> 
-        <Pressable onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: palette.surfaceSoft }]}> 
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.background }]}>
+      <View style={[styles.header, { borderBottomColor: palette.border }]}>
+        <Pressable onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: palette.surfaceSoft }]}>
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
-        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Profil & paramètres</Text>
+        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Profil et réglages</Text>
 
         <View style={styles.iconButton} />
       </View>
@@ -56,8 +75,17 @@ export default function ProfileScreen() {
                 borderColor: palette.border,
               },
             ]}>
-            <View style={[styles.leadingIcon, { backgroundColor: palette.surfaceSoft }]}> 
-              <IconSymbol name={action.icon} size={18} color={palette.accentPrimary} />
+            <View style={[styles.leadingIcon, { backgroundColor: palette.surfaceSoft }]}>
+              {action.key === 'history' ? (
+                <HistoryLogo
+                  size={20}
+                  primaryColor={palette.accentPrimary}
+                  secondaryColor={palette.accentSecondary}
+                  highlightColor={palette.highlightEdge}
+                />
+              ) : (
+                <IconSymbol name={action.icon} size={18} color={palette.accentPrimary} />
+              )}
             </View>
 
             <View style={styles.rowText}>

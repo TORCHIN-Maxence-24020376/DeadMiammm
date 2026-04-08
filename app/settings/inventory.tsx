@@ -45,16 +45,16 @@ export default function InventorySettingsScreen() {
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
-        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Inventaire intelligent</Text>
+        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Inventaire</Text>
 
         <View style={styles.iconButton} />
       </View>
 
       <View style={styles.content}>
         <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Seuil “bientôt expiré”</Text>
+          <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Alerte date proche</Text>
           <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Un produit est considéré proche de la date si son expiration est dans {expiringSoonDays} jour
+            Un produit remonte ici si sa date tombe dans {expiringSoonDays} jour
             {expiringSoonDays > 1 ? 's' : ''} ou moins.
           </Text>
 
@@ -72,7 +72,8 @@ export default function InventorySettingsScreen() {
         <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Seuil stock faible</Text>
           <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Un produit passe en stock faible quand la quantité est inférieure ou égale à {lowStockThreshold}.
+            Un produit passe en stock faible quand il reste {lowStockThreshold} unité
+            {lowStockThreshold > 1 ? 's' : ''} ou moins.
           </Text>
 
           <Stepper
@@ -88,7 +89,7 @@ export default function InventorySettingsScreen() {
 
         <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Ces réglages pilotent l’accueil, les alertes, les recettes et la génération automatique de liste de courses.
+            Ces réglages servent pour l’accueil, les alertes et les suggestions de l’app.
           </Text>
         </View>
       </View>

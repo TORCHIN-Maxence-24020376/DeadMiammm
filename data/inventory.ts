@@ -66,9 +66,9 @@ export const zoneIconMap: Record<StorageZone, AppIconName> = {
 };
 
 export const sourceLabels: Record<ProductSource, string> = {
-  scan: 'Scan code-barres',
-  search: 'Recherche OpenFoodFacts',
-  manual: 'Ajout manuel',
+  scan: 'Scan',
+  search: 'Recherche',
+  manual: 'Manuel',
 };
 
 export function inferLowStock(product: Pick<InventoryProduct, 'quantity'>, threshold = 1) {
