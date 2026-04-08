@@ -29,6 +29,7 @@ export type InventoryProduct = {
   zone: StorageZone;
   expiresAt: string | null;
   quantity: number;
+  initialQuantity?: number;
   unit: string;
   consumptionPercent: number;
   addedAt: string;

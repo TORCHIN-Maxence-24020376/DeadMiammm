@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutAnimation,
   Platform,
@@ -36,12 +36,25 @@ export default function HomeScreen() {
   const { products, isHydrating } = useInventory();
   const { expiringSoonDays, lowStockThreshold } = useAppSettings();
   const scrollRef = useRef<ScrollView>(null);
+  const hasAutoOpenedNotifications = useRef(false);
 
   const [isListMenuOpen, setIsListMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>('cards');
   const [searchValue, setSearchValue] = useState('');
   const [isLowStockExpanded, setIsLowStockExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!isHydrating && !hasAutoOpenedNotifications.current) {
+      const hasExpiringOrExpired = products.some(
+        (product) => product.expiresAt && daysUntil(product.expiresAt) <= expiringSoonDays
+      );
+      if (hasExpiringOrExpired) {
+        setTimeout(() => setIsNotificationsOpen(true), 600);
+      }
+      hasAutoOpenedNotifications.current = true;
+    }
+  }, [isHydrating, products, expiringSoonDays]);
 
   const filteredProducts = useMemo(() => {
     if (!searchValue.trim()) {

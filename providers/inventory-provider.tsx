@@ -88,6 +88,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         id: createId(),
         addedAt: new Date().toISOString(),
         consumptionPercent: sanitizeConsumptionPercent(input.consumptionPercent),
+        initialQuantity: input.quantity,
       };
 
       const nextProducts = [nextProduct, ...products];
@@ -250,6 +251,7 @@ function sanitizeStoredProduct(entry: unknown): InventoryProduct | null {
 
   const zone = isStorageZone(candidate.zone) ? candidate.zone : 'autre';
   const quantity = sanitizeQuantity(candidate.quantity);
+  const initialQuantity = candidate.initialQuantity !== undefined ? sanitizeQuantity(candidate.initialQuantity) : quantity;
   const unit = optionalString(candidate.unit) ?? 'unité';
   const addedAt = normalizeDateTime(candidate.addedAt);
 
@@ -261,6 +263,7 @@ function sanitizeStoredProduct(entry: unknown): InventoryProduct | null {
     zone,
     expiresAt: normalizeExpiresAt(candidate.expiresAt),
     quantity,
+    initialQuantity,
     unit,
     consumptionPercent: sanitizeConsumptionPercent(candidate.consumptionPercent),
     addedAt,
