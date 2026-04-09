@@ -7,8 +7,21 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Radii, Typography } from '@/constants/theme';
-import { inferConsumptionPercent, resolveInitialQuantity, sourceLabels, StorageZone, zoneIconMap, zoneLabels } from '@/data/inventory';
+import {
+  FrozenHomemadeType,
+  frozenHomemadeDurationLabels,
+  frozenHomemadeLabels,
+  inferConsumptionPercent,
+  inferHomemadeFrozenExpiration,
+  isHomemadeFrozenProduct,
+  resolveInitialQuantity,
+  sourceLabels,
+  StorageZone,
+  zoneIconMap,
+  zoneLabels,
+} from '@/data/inventory';
 import { useInventory } from '@/providers/inventory-provider';
+import { useShoppingLists } from '@/providers/shopping-lists-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { formatFullDate, zoneLabel } from '@/utils/format';
 import { buildNutritionRows } from '@/utils/nutrition';
@@ -22,6 +35,7 @@ const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('fr-FR', {
 });
 
 const EDITABLE_ZONES: StorageZone[] = ['frigo', 'congelateur', 'sec', 'autre'];
+const FROZEN_HOMEMADE_TYPES: FrozenHomemadeType[] = ['viande', 'poisson', 'plat_cuisine', 'soupe', 'legumes', 'pain'];
 
 export default function ProductDetailsScreen() {
   const router = useRouter();
@@ -29,6 +43,7 @@ export default function ProductDetailsScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const { palette } = useAppTheme();
   const { products, consumeProductUnit, removeProduct, updateProduct, updateProductConsumption } = useInventory();
+  const { lists, createList, addItem } = useShoppingLists();
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [sliderWidth, setSliderWidth] = useState(1);
@@ -41,6 +56,8 @@ export default function ProductDetailsScreen() {
   const [editExpiresAt, setEditExpiresAt] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [editFormat, setEditFormat] = useState('');
+  const [editHomemadeFrozenType, setEditHomemadeFrozenType] = useState<FrozenHomemadeType | null>(null);
+  const [editFrozenReferenceAt, setEditFrozenReferenceAt] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
 
   const productId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -57,6 +74,12 @@ export default function ProductDetailsScreen() {
     return buildNutritionRows(product?.nutrition);
   }, [product]);
 
+  const activeShoppingList = useMemo(() => {
+    return [...lists]
+      .filter((candidate) => candidate.status === 'active')
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  }, [lists]);
+
   useEffect(() => {
     setSliderPercent(product?.consumptionPercent ?? 0);
   }, [product?.id, product?.consumptionPercent]);
@@ -67,6 +90,7 @@ export default function ProductDetailsScreen() {
 
   const initialQuantity = product ? resolveInitialQuantity(product) : 1;
   const consumptionPercent = product ? inferConsumptionPercent(product) : 0;
+  const shoppingSuggestionQuantity = product ? Math.max(1, resolveInitialQuantity(product) - product.quantity) : 1;
 
   const onDeleteProduct = () => {
     if (!product) {
@@ -144,6 +168,8 @@ export default function ProductDetailsScreen() {
     setEditExpiresAt(product.expiresAt ?? '');
     setEditCategory(product.category ?? '');
     setEditFormat(product.format ?? '');
+    setEditHomemadeFrozenType(product.homemadeFrozenType ?? null);
+    setEditFrozenReferenceAt(product.frozenAt ?? null);
     setEditError(null);
     setIsEditModalOpen(true);
     Haptics.selectionAsync();
@@ -152,6 +178,52 @@ export default function ProductDetailsScreen() {
   const onCloseEditModal = () => {
     setIsEditModalOpen(false);
     setEditError(null);
+  };
+
+  const toggleEditHomemadeFrozen = () => {
+    if (editHomemadeFrozenType) {
+      setEditHomemadeFrozenType(null);
+      Haptics.selectionAsync();
+      return;
+    }
+
+    const referenceDate = editFrozenReferenceAt ?? new Date().toISOString();
+    const nextType: FrozenHomemadeType = 'plat_cuisine';
+    setEditFrozenReferenceAt(referenceDate);
+    setEditHomemadeFrozenType(nextType);
+    setEditZone('congelateur');
+    setEditExpiresAt(inferHomemadeFrozenExpiration(nextType, referenceDate));
+    Haptics.selectionAsync();
+  };
+
+  const selectEditHomemadeFrozenType = (type: FrozenHomemadeType) => {
+    const referenceDate = editFrozenReferenceAt ?? new Date().toISOString();
+    setEditFrozenReferenceAt(referenceDate);
+    setEditHomemadeFrozenType(type);
+    setEditZone('congelateur');
+    setEditExpiresAt(inferHomemadeFrozenExpiration(type, referenceDate));
+    Haptics.selectionAsync();
+  };
+
+  const onAddToShoppingList = async () => {
+    if (!product) {
+      return;
+    }
+
+    const targetList = activeShoppingList ?? (await createList());
+    await addItem({
+      listId: targetList.id,
+      name: product.name,
+      quantity: shoppingSuggestionQuantity,
+      unit: product.unit,
+      linkedProductId: product.id,
+    });
+
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert(
+      'Ajoute a la liste',
+      `"${product.name}" a ete ajoute a "${targetList.name}" (${shoppingSuggestionQuantity} ${product.unit}).`
+    );
   };
 
   const onConsumptionTrackLayout = (event: LayoutChangeEvent) => {
@@ -226,10 +298,14 @@ export default function ProductDetailsScreen() {
     }
 
     const normalizedExpiresAt = normalizeEditableDate(editExpiresAt);
-    if (normalizedExpiresAt === 'invalid') {
+    if (!editHomemadeFrozenType && normalizedExpiresAt === 'invalid') {
       setEditError('La date doit être au format YYYY-MM-DD.');
       return;
     }
+
+    const frozenReferenceAt = editHomemadeFrozenType
+      ? editFrozenReferenceAt ?? product.frozenAt ?? new Date().toISOString()
+      : undefined;
 
     const updated = await updateProduct(product.id, {
       name: trimmedName,
@@ -239,6 +315,8 @@ export default function ProductDetailsScreen() {
       expiresAt: normalizedExpiresAt,
       category: editCategory,
       format: editFormat,
+      homemadeFrozenType: editHomemadeFrozenType ?? undefined,
+      frozenAt: frozenReferenceAt,
     });
 
     if (!updated) {
@@ -334,6 +412,23 @@ export default function ProductDetailsScreen() {
                 <MetaChip label="Format" value={product.format ?? '-'} palette={palette} />
                 <MetaChip label="Categorie" value={product.category ?? '-'} palette={palette} />
               </View>
+
+              {isHomemadeFrozenProduct(product) ? (
+                <View style={[styles.frozenBadgeCard, { backgroundColor: palette.info + '12', borderColor: palette.info + '22' }]}>
+                  <View style={[styles.frozenBadgeIcon, { backgroundColor: palette.info + '22' }]}>
+                    <IconSymbol name="snowflake" size={18} color={palette.info} />
+                  </View>
+                  <View style={styles.frozenBadgeText}>
+                    <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Produit maison congele</Text>
+                    <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                      {frozenHomemadeLabels[product.homemadeFrozenType!]} · {frozenHomemadeDurationLabels[product.homemadeFrozenType!]}
+                    </Text>
+                    <Text style={[Typography.caption, { color: palette.textTertiary }]}>
+                      Congele le {formatDateTime(product.frozenAt ?? product.addedAt)}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
 
               <View style={[styles.progressCard, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
                 <View style={styles.progressHeader}>
@@ -440,6 +535,20 @@ export default function ProductDetailsScreen() {
               </View>
             )}
           </View>
+
+          <Pressable
+            onPress={() => {
+              void onAddToShoppingList();
+            }}
+            style={({ pressed }) => [
+              styles.shoppingButton,
+              { backgroundColor: pressed ? palette.accentPrimaryStrong : palette.accentPrimary },
+            ]}>
+            <IconSymbol name="cart.badge.plus" size={18} color={palette.textInverse} />
+            <Text style={[Typography.labelLg, { color: palette.textInverse }]}>
+              Ajouter aux courses ({shoppingSuggestionQuantity} {product.unit})
+            </Text>
+          </Pressable>
 
           <Pressable
             onPress={onOpenEditModal}
@@ -552,19 +661,94 @@ export default function ProductDetailsScreen() {
                 </View>
               </View>
 
+              <View style={[styles.fieldBlock, styles.homemadeEditCard, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+                <View style={styles.homemadeEditHeader}>
+                  <View style={styles.progressText}>
+                    <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Produit maison congele</Text>
+                    <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+                      Type et duree auto pour les preparations maison.
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={toggleEditHomemadeFrozen}
+                    style={[
+                      styles.homemadeToggle,
+                      {
+                        backgroundColor: editHomemadeFrozenType ? palette.accentPrimary : palette.surface,
+                        borderColor: palette.border,
+                      },
+                    ]}>
+                    <Text
+                      style={[
+                        Typography.labelSm,
+                        { color: editHomemadeFrozenType ? palette.textInverse : palette.textPrimary },
+                      ]}>
+                      {editHomemadeFrozenType ? 'Actif' : 'Inactif'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {editHomemadeFrozenType ? (
+                  <>
+                    <View style={styles.zoneChoices}>
+                      {FROZEN_HOMEMADE_TYPES.map((type) => (
+                        <Pressable
+                          key={type}
+                          onPress={() => selectEditHomemadeFrozenType(type)}
+                          style={[
+                            styles.zoneChoice,
+                            {
+                              backgroundColor:
+                                editHomemadeFrozenType === type ? palette.accentPrimary : palette.surface,
+                              borderColor: palette.border,
+                            },
+                          ]}>
+                          <Text
+                            style={[
+                              Typography.labelSm,
+                              {
+                                color:
+                                  editHomemadeFrozenType === type ? palette.textInverse : palette.textPrimary,
+                              },
+                            ]}>
+                            {frozenHomemadeLabels[type]}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+                      Duree conseillee : {frozenHomemadeDurationLabels[editHomemadeFrozenType]}.
+                    </Text>
+                  </>
+                ) : null}
+              </View>
+
               <View style={styles.fieldBlock}>
-                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Date d’expiration</Text>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>
+                  Date d&apos;expiration {editHomemadeFrozenType ? '(auto)' : ''}
+                </Text>
                 <TextInput
                   value={editExpiresAt}
                   onChangeText={setEditExpiresAt}
                   placeholder="YYYY-MM-DD"
                   placeholderTextColor={palette.textTertiary}
+                  editable={!editHomemadeFrozenType}
                   style={[
                     styles.fieldInput,
                     Typography.bodyMd,
-                    { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft },
+                    {
+                      color: palette.textPrimary,
+                      borderColor: palette.border,
+                      backgroundColor: editHomemadeFrozenType ? palette.surface : palette.surfaceSoft,
+                      opacity: editHomemadeFrozenType ? 0.8 : 1,
+                    },
                   ]}
                 />
+                {editHomemadeFrozenType ? (
+                  <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+                    Calcul automatique depuis le jour de congelation.
+                  </Text>
+                ) : null}
               </View>
 
               <View style={styles.fieldBlock}>
@@ -573,7 +757,12 @@ export default function ProductDetailsScreen() {
                   {EDITABLE_ZONES.map((zone) => (
                     <Pressable
                       key={zone}
-                      onPress={() => setEditZone(zone)}
+                      onPress={() => {
+                        setEditZone(zone);
+                        if (zone !== 'congelateur' && editHomemadeFrozenType) {
+                          setEditHomemadeFrozenType(null);
+                        }
+                      }}
                       style={[
                         styles.zoneChoice,
                         {
@@ -849,6 +1038,25 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  frozenBadgeCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  frozenBadgeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  frozenBadgeText: {
+    flex: 1,
+    gap: 2,
+  },
   progressCard: {
     borderRadius: 18,
     borderWidth: 1,
@@ -952,6 +1160,18 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 4,
   },
+  shoppingButton: {
+    height: 52,
+    borderRadius: Radii.capsule,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
+    elevation: 5,
+  },
   emptyWrap: {
     flex: 1,
     paddingHorizontal: 16,
@@ -1022,6 +1242,26 @@ const styles = StyleSheet.create({
   },
   fieldBlock: {
     gap: 6,
+  },
+  homemadeEditCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+  },
+  homemadeEditHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  homemadeToggle: {
+    minHeight: 34,
+    minWidth: 74,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   fieldRow: {
     flexDirection: 'row',

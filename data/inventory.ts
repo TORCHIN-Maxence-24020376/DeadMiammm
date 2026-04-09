@@ -1,6 +1,7 @@
 export type StorageZone = 'frigo' | 'congelateur' | 'sec' | 'autre';
 export type DisplayMode = 'cards' | 'list';
 export type ProductSource = 'scan' | 'search' | 'manual';
+export type FrozenHomemadeType = 'viande' | 'poisson' | 'plat_cuisine' | 'soupe' | 'legumes' | 'pain';
 export type AppIconName =
   | 'refrigerator'
   | 'snowflake'
@@ -37,13 +38,15 @@ export type InventoryProduct = {
   category?: string;
   format?: string;
   nutrition?: NutritionFacts;
+  homemadeFrozenType?: FrozenHomemadeType;
+  frozenAt?: string;
   source: ProductSource;
 };
 
 export type AddInventoryProductInput = Omit<InventoryProduct, 'id' | 'addedAt'>;
 export type UpdateInventoryProductInput = Pick<
   InventoryProduct,
-  'name' | 'zone' | 'expiresAt' | 'quantity' | 'unit' | 'category' | 'format'
+  'name' | 'zone' | 'expiresAt' | 'quantity' | 'unit' | 'category' | 'format' | 'homemadeFrozenType' | 'frozenAt'
 >;
 
 export const zoneLabels: Record<StorageZone, string> = {
@@ -64,6 +67,33 @@ export const sourceLabels: Record<ProductSource, string> = {
   scan: 'Scan code-barres',
   search: 'Recherche OpenFoodFacts',
   manual: 'Ajout manuel',
+};
+
+export const frozenHomemadeLabels: Record<FrozenHomemadeType, string> = {
+  viande: 'Viande',
+  poisson: 'Poisson',
+  plat_cuisine: 'Plat cuisine',
+  soupe: 'Soupe / sauce',
+  legumes: 'Legumes',
+  pain: 'Pain / patisserie',
+};
+
+export const frozenHomemadeDurationDays: Record<FrozenHomemadeType, number> = {
+  viande: 90,
+  poisson: 90,
+  plat_cuisine: 365,
+  soupe: 180,
+  legumes: 365,
+  pain: 180,
+};
+
+export const frozenHomemadeDurationLabels: Record<FrozenHomemadeType, string> = {
+  viande: '3 mois',
+  poisson: '3 mois',
+  plat_cuisine: '1 an',
+  soupe: '6 mois',
+  legumes: '1 an',
+  pain: '6 mois',
 };
 
 export function inferLowStock(product: Pick<InventoryProduct, 'quantity'>, threshold = 1) {
@@ -99,10 +129,53 @@ export function clampConsumptionPercent(value: unknown) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+export function isFrozenHomemadeType(value: unknown): value is FrozenHomemadeType {
+  return (
+    value === 'viande' ||
+    value === 'poisson' ||
+    value === 'plat_cuisine' ||
+    value === 'soupe' ||
+    value === 'legumes' ||
+    value === 'pain'
+  );
+}
+
+export function isHomemadeFrozenProduct(
+  product: Pick<InventoryProduct, 'zone' | 'homemadeFrozenType'>
+) {
+  return product.zone === 'congelateur' && isFrozenHomemadeType(product.homemadeFrozenType);
+}
+
+export function inferHomemadeFrozenExpiration(
+  type: FrozenHomemadeType,
+  referenceDate: Date | string = new Date()
+) {
+  const baseDate = toSafeDate(referenceDate);
+  baseDate.setHours(12, 0, 0, 0);
+  baseDate.setDate(baseDate.getDate() + frozenHomemadeDurationDays[type]);
+  return toLocalDateKey(baseDate);
+}
+
 function normalizeQuantity(value: unknown) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return 1;
   }
 
   return Math.max(1, Math.round(value));
+}
+
+function toSafeDate(value: Date | string) {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return new Date();
+  }
+
+  return date;
+}
+
+function toLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }

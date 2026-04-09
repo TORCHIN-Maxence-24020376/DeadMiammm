@@ -4,7 +4,9 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import {
   AddInventoryProductInput,
   clampConsumptionPercent,
+  inferHomemadeFrozenExpiration,
   InventoryProduct,
+  isFrozenHomemadeType,
   resolveInitialQuantity,
   StorageZone,
   UpdateInventoryProductInput,
@@ -99,15 +101,32 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
   const addProduct = useCallback(
     async (input: AddInventoryProductInput) => {
+      const addedAt = new Date().toISOString();
+      const homemadeFrozenType = sanitizeHomemadeFrozenType(input.homemadeFrozenType);
+      const frozenAt = homemadeFrozenType
+        ? normalizeOptionalDateTime(input.frozenAt) ?? addedAt
+        : undefined;
+      const zone = homemadeFrozenType
+        ? 'congelateur'
+        : isStorageZone(input.zone)
+          ? input.zone
+          : 'autre';
+      const expiresAt = homemadeFrozenType
+        ? inferHomemadeFrozenExpiration(homemadeFrozenType, frozenAt)
+        : normalizeExpiresAt(input.expiresAt);
       const nextProduct: InventoryProduct = {
         ...input,
         id: createId(),
-        addedAt: new Date().toISOString(),
+        addedAt,
+        zone,
+        expiresAt,
         initialQuantity: resolveInitialQuantity({
           quantity: input.quantity,
           initialQuantity: input.initialQuantity,
         }),
         consumptionPercent: clampConsumptionPercent(input.consumptionPercent),
+        homemadeFrozenType,
+        frozenAt,
       };
 
       const nextProducts = [nextProduct, ...products];
@@ -144,12 +163,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     async (id: string, input: UpdateInventoryProductInput) => {
       const normalizedName = optionalString(input.name);
       const normalizedUnit = optionalString(input.unit);
+      const normalizedHomemadeFrozenType = sanitizeHomemadeFrozenType(input.homemadeFrozenType);
       const normalizedExpiresAt = input.expiresAt === null ? null : normalizeExpiresAt(input.expiresAt);
       if (!normalizedName || !normalizedUnit) {
         return false;
       }
 
-      if (input.expiresAt !== null && normalizedExpiresAt === null) {
+      if (!normalizedHomemadeFrozenType && input.expiresAt !== null && normalizedExpiresAt === null) {
         return false;
       }
 
@@ -161,11 +181,23 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
         found = true;
         const nextQuantity = sanitizeQuantity(input.quantity);
+        const nextFrozenAt = normalizedHomemadeFrozenType
+          ? normalizeOptionalDateTime(input.frozenAt) ?? normalizeOptionalDateTime(product.frozenAt) ?? new Date().toISOString()
+          : undefined;
+        const nextZone = normalizedHomemadeFrozenType
+          ? 'congelateur'
+          : isStorageZone(input.zone)
+            ? input.zone
+            : product.zone;
+        const nextExpiresAt = normalizedHomemadeFrozenType
+          ? inferHomemadeFrozenExpiration(normalizedHomemadeFrozenType, nextFrozenAt)
+          : normalizedExpiresAt;
+
         return {
           ...product,
           name: normalizedName,
-          zone: isStorageZone(input.zone) ? input.zone : product.zone,
-          expiresAt: normalizedExpiresAt,
+          zone: nextZone,
+          expiresAt: nextExpiresAt,
           quantity: nextQuantity,
           initialQuantity: Math.max(resolveInitialQuantity(product), nextQuantity),
           consumptionPercent:
@@ -175,6 +207,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           unit: normalizedUnit,
           category: optionalString(input.category),
           format: optionalString(input.format),
+          homemadeFrozenType: normalizedHomemadeFrozenType,
+          frozenAt: nextFrozenAt,
         };
       });
 
@@ -292,14 +326,22 @@ function sanitizeStoredProduct(entry: unknown): InventoryProduct | null {
   const consumptionPercent = clampConsumptionPercent(candidate.consumptionPercent);
   const unit = optionalString(candidate.unit) ?? 'unite';
   const addedAt = normalizeDateTime(candidate.addedAt);
+  const homemadeFrozenType = sanitizeHomemadeFrozenType(candidate.homemadeFrozenType);
+  const frozenAt = homemadeFrozenType
+    ? normalizeOptionalDateTime(candidate.frozenAt) ?? addedAt
+    : undefined;
+  const resolvedZone = homemadeFrozenType ? 'congelateur' : zone;
+  const expiresAt = homemadeFrozenType
+    ? inferHomemadeFrozenExpiration(homemadeFrozenType, frozenAt)
+    : normalizeExpiresAt(candidate.expiresAt);
 
   return {
     id: optionalString(candidate.id) ?? createId(),
     name,
     barcode: optionalString(candidate.barcode),
     imageUrl: optionalString(candidate.imageUrl),
-    zone,
-    expiresAt: normalizeExpiresAt(candidate.expiresAt),
+    zone: resolvedZone,
+    expiresAt,
     quantity,
     initialQuantity,
     consumptionPercent,
@@ -309,6 +351,8 @@ function sanitizeStoredProduct(entry: unknown): InventoryProduct | null {
     format: optionalString(candidate.format),
     nutrition: sanitizeNutrition(candidate.nutrition),
     source: sanitizeSource(candidate.source),
+    homemadeFrozenType,
+    frozenAt,
   };
 }
 
@@ -354,6 +398,24 @@ function normalizeDateTime(value: unknown) {
   return new Date(value).toISOString();
 }
 
+function normalizeOptionalDateTime(value: unknown) {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed.toISOString();
+}
+
 function sanitizeSource(value: unknown): InventoryProduct['source'] {
   if (value === 'scan' || value === 'search' || value === 'manual') {
     return value;
@@ -394,6 +456,10 @@ function sanitizeNumber(value: unknown) {
   }
 
   return value;
+}
+
+function sanitizeHomemadeFrozenType(value: unknown): InventoryProduct['homemadeFrozenType'] {
+  return isFrozenHomemadeType(value) ? value : undefined;
 }
 
 function toLocalDateKey(date: Date) {

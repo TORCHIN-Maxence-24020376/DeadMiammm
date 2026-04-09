@@ -9,6 +9,7 @@ import { searchProductsByText } from '@/services/open-food-facts';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { resolveInitialQuantity } from '@/data/inventory';
 import { DEFAULT_SHOPPING_ITEM_UNIT, ShoppingList, ShoppingListItem } from '@/data/shopping-lists';
 import { useInventory } from '@/providers/inventory-provider';
 import { useShoppingLists } from '@/providers/shopping-lists-provider';
@@ -56,13 +57,11 @@ export default function ShoppingListsScreen() {
     listIdToArchive: string;
     unavailableItems: ShoppingListItem[];
   }>({ visible: false, listIdToArchive: '', unavailableItems: [] });
-  const [newListName, setNewListName] = useState('');
   const [renameInput, setRenameInput] = useState('');
   const [draftName, setDraftName] = useState('');
   const [draftQuantityInput, setDraftQuantityInput] = useState('1');
   const [draftUnit, setDraftUnit] = useState(DEFAULT_SHOPPING_ITEM_UNIT);
   const [inventoryQuery, setInventoryQuery] = useState('');
-  const [showOnlyRemaining, setShowOnlyRemaining] = useState(false);
 
   const activeLists = useMemo(() => {
     return [...lists]
@@ -129,14 +128,6 @@ export default function ShoppingListsScreen() {
     };
   }, [selectedList]);
 
-  const visibleChecklistItems = useMemo(() => {
-    if (!showOnlyRemaining) {
-      return sortedSelectedItems;
-    }
-
-    return sortedSelectedItems.filter((item) => !isItemCompleted(item));
-  }, [showOnlyRemaining, sortedSelectedItems]);
-
   const productById = useMemo(() => {
     return new Map(products.map((p) => [p.id, p]));
   }, [products]);
@@ -157,7 +148,7 @@ export default function ShoppingListsScreen() {
       return;
     }
 
-    const fromCache: Array<{ itemId: string; imageUrl: string | null }> = [];
+    const fromCache: { itemId: string; imageUrl: string | null }[] = [];
     const toFetch: typeof unlinked = [];
 
     for (const item of unlinked) {
@@ -294,13 +285,6 @@ export default function ShoppingListsScreen() {
     setIsEditMenuOpen(false);
   };
 
-  const createNewList = async () => {
-    const created = await createList(newListName);
-    setNewListName('');
-    setSelectedListId(created.id);
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  };
-
   const saveListName = async () => {
     if (!selectedList) {
       return;
@@ -360,7 +344,7 @@ export default function ShoppingListsScreen() {
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const addFromInventory = async (product: { id: string; name: string; unit: string }) => {
+  const addFromInventory = async (product: { id: string; name: string; unit: string; quantity: number; initialQuantity?: number }) => {
     if (!selectedList) {
       return;
     }
@@ -370,10 +354,11 @@ export default function ShoppingListsScreen() {
       return;
     }
 
+    const suggestedQuantity = Math.max(1, resolveInitialQuantity(product) - product.quantity);
     await addItem({
       listId: selectedList.id,
       name: product.name,
-      quantity: 1,
+      quantity: suggestedQuantity,
       unit: product.unit,
       linkedProductId: product.id,
     });
@@ -920,7 +905,7 @@ export default function ShoppingListsScreen() {
                               {product.name}
                             </Text>
                             <Text style={[Typography.caption, { color: palette.textSecondary }]}>
-                              {product.quantity} {product.unit}
+                              Stock: {product.quantity} {product.unit} · Courses: {Math.max(1, resolveInitialQuantity(product) - product.quantity)} {product.unit}
                             </Text>
                           </View>
                           <IconSymbol name="plus" size={14} color={palette.accentPrimary} />

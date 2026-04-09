@@ -188,11 +188,30 @@ export function ShoppingListsProvider({ children }: { children: React.ReactNode 
         updatedAt: now,
       };
 
+      let createdOrMergedItem: ShoppingListItem | null = null;
       const nextLists = lists.map((list) => {
         if (list.id !== input.listId) {
           return list;
         }
 
+        const matchingItem = list.items.find((item) => isSameShoppingItem(item, nextItem));
+        if (matchingItem) {
+          createdOrMergedItem = {
+            ...matchingItem,
+            quantity: sanitizeQuantity(matchingItem.quantity + quantity),
+            isChecked: false,
+            isUnavailable: false,
+            updatedAt: now,
+          };
+
+          return {
+            ...list,
+            items: list.items.map((item) => (item.id === matchingItem.id ? createdOrMergedItem! : item)),
+            updatedAt: now,
+          };
+        }
+
+        createdOrMergedItem = nextItem;
         return {
           ...list,
           items: [nextItem, ...list.items],
@@ -201,7 +220,7 @@ export function ShoppingListsProvider({ children }: { children: React.ReactNode 
       });
 
       await persist(nextLists);
-      return nextItem;
+      return createdOrMergedItem;
     },
     [lists, persist]
   );
@@ -521,4 +540,12 @@ function normalizeOptionalString(value: unknown) {
 
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function isSameShoppingItem(current: ShoppingListItem, next: Pick<ShoppingListItem, 'name' | 'unit' | 'linkedProductId'>) {
+  if (current.linkedProductId && next.linkedProductId) {
+    return current.linkedProductId === next.linkedProductId;
+  }
+
+  return current.name.trim().toLowerCase() === next.name.trim().toLowerCase() && current.unit === next.unit;
 }

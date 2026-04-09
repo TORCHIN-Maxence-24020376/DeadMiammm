@@ -3,12 +3,32 @@ import { CameraView, type BarcodeScanningResult, useCameraPermissions } from 'ex
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Keyboard, KeyboardEvent, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Keyboard,
+  KeyboardEvent,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Radii, Typography } from '@/constants/theme';
-import { NutritionFacts, StorageZone, zoneLabels } from '@/data/inventory';
+import {
+  FrozenHomemadeType,
+  frozenHomemadeDurationLabels,
+  frozenHomemadeLabels,
+  inferHomemadeFrozenExpiration,
+  NutritionFacts,
+  StorageZone,
+  zoneLabels,
+} from '@/data/inventory';
 import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import {
@@ -23,6 +43,7 @@ type ScanState = 'scanning' | 'fallback' | 'recognized';
 type DraftSource = 'scan' | 'search' | 'manual';
 
 const storageChoices: StorageZone[] = ['frigo', 'congelateur', 'sec', 'autre'];
+const frozenHomemadeChoices: FrozenHomemadeType[] = ['viande', 'poisson', 'plat_cuisine', 'soupe', 'legumes', 'pain'];
 const ISO_DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function ScannerScreen() {
@@ -52,6 +73,8 @@ export default function ScannerScreen() {
   const [quantityInput, setQuantityInput] = useState('1');
   const [unit, setUnit] = useState('unité');
   const [storage, setStorage] = useState<StorageZone>('sec');
+  const [isHomemadeFrozen, setIsHomemadeFrozen] = useState(false);
+  const [homemadeFrozenType, setHomemadeFrozenType] = useState<FrozenHomemadeType>('plat_cuisine');
   const [expirationDate, setExpirationDate] = useState(defaultExpirationDate('sec'));
   const [formatValue, setFormatValue] = useState('');
   const [categoryLabel, setCategoryLabel] = useState('');
@@ -207,6 +230,8 @@ export default function ScannerScreen() {
     setQuantityInput('1');
     setUnit('unité');
     setStorage('sec');
+    setIsHomemadeFrozen(false);
+    setHomemadeFrozenType('plat_cuisine');
     setExpirationDate(defaultExpirationDate('sec'));
     setFormatValue('');
     setCategoryLabel('');
@@ -247,6 +272,8 @@ export default function ScannerScreen() {
       category: categoryLabel || undefined,
       format: formatValue || undefined,
       nutrition,
+      homemadeFrozenType: isHomemadeFrozen ? homemadeFrozenType : undefined,
+      frozenAt: isHomemadeFrozen ? new Date().toISOString() : undefined,
       source,
     });
 
@@ -278,6 +305,27 @@ export default function ScannerScreen() {
 
   const closeImageModal = () => {
     setIsImageModalOpen(false);
+  };
+
+  const toggleHomemadeFrozen = (enabled: boolean) => {
+    setIsHomemadeFrozen(enabled);
+
+    if (!enabled) {
+      Haptics.selectionAsync();
+      return;
+    }
+
+    setStorage('congelateur');
+    setExpirationDate(inferHomemadeFrozenExpiration(homemadeFrozenType));
+    Haptics.selectionAsync();
+  };
+
+  const selectHomemadeFrozenType = (type: FrozenHomemadeType) => {
+    setHomemadeFrozenType(type);
+    setIsHomemadeFrozen(true);
+    setStorage('congelateur');
+    setExpirationDate(inferHomemadeFrozenExpiration(type));
+    Haptics.selectionAsync();
   };
 
   return (
@@ -500,6 +548,18 @@ export default function ScannerScreen() {
                     key={choice}
                     onPress={() => {
                       setStorage(choice);
+
+                      if (choice !== 'congelateur' && isHomemadeFrozen) {
+                        setIsHomemadeFrozen(false);
+                        setExpirationDate(defaultExpirationDate(choice));
+                        return;
+                      }
+
+                      if (choice === 'congelateur' && isHomemadeFrozen) {
+                        setExpirationDate(inferHomemadeFrozenExpiration(homemadeFrozenType));
+                        return;
+                      }
+
                       if (!normalizeExpirationDate(expirationDate)) {
                         setExpirationDate(defaultExpirationDate(choice));
                       }
@@ -525,23 +585,89 @@ export default function ScannerScreen() {
               </View>
             </View>
 
+            <View
+              style={[
+                styles.fieldBlock,
+                styles.homemadeCard,
+                { backgroundColor: palette.surfaceSoft, borderColor: palette.border },
+              ]}>
+              <View style={styles.homemadeHeader}>
+                <View style={styles.homemadeTextWrap}>
+                  <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Produit maison congele</Text>
+                  <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+                    Expiration calculee automatiquement selon le type.
+                  </Text>
+                </View>
+                <Switch
+                  value={isHomemadeFrozen}
+                  onValueChange={toggleHomemadeFrozen}
+                  trackColor={{ false: palette.surfacePressed, true: palette.accentPrimary }}
+                  thumbColor={isHomemadeFrozen ? palette.textInverse : palette.surface}
+                />
+              </View>
+
+              {isHomemadeFrozen ? (
+                <>
+                  <View style={styles.storageWrap}>
+                    {frozenHomemadeChoices.map((choice) => (
+                      <Pressable
+                        key={choice}
+                        onPress={() => selectHomemadeFrozenType(choice)}
+                        style={[
+                          styles.storageChoice,
+                          {
+                            backgroundColor:
+                              homemadeFrozenType === choice ? palette.accentPrimary : palette.surface,
+                            borderColor: palette.border,
+                          },
+                        ]}>
+                        <Text
+                          style={[
+                            Typography.labelSm,
+                            {
+                              color:
+                                homemadeFrozenType === choice ? palette.textInverse : palette.textPrimary,
+                            },
+                          ]}>
+                          {frozenHomemadeLabels[choice]}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+                    Duree conseillee : {frozenHomemadeDurationLabels[homemadeFrozenType]}.
+                  </Text>
+                </>
+              ) : null}
+            </View>
+
             <View style={styles.fieldBlock}>
-              <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Date d’expiration {expirationRequired ? '(obligatoire)' : '(optionnelle)'}</Text>
+              <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>
+                Date d&apos;expiration {isHomemadeFrozen ? '(auto)' : expirationRequired ? '(obligatoire)' : '(optionnelle)'}
+              </Text>
               <TextInput
                 value={expirationDate}
                 onChangeText={setExpirationDate}
                 placeholder="YYYY-MM-DD"
                 placeholderTextColor={palette.textTertiary}
+                editable={!isHomemadeFrozen}
                 style={[
                   styles.textField,
                   Typography.bodyMd,
                   {
                     color: palette.textPrimary,
                     borderColor: palette.border,
-                    backgroundColor: palette.surfaceSoft,
+                    backgroundColor: isHomemadeFrozen ? palette.surface : palette.surfaceSoft,
+                    opacity: isHomemadeFrozen ? 0.8 : 1,
                   },
                 ]}
               />
+              {isHomemadeFrozen ? (
+                <Text style={[Typography.caption, { color: palette.textSecondary }]}>
+                  Date auto pour {frozenHomemadeLabels[homemadeFrozenType].toLowerCase()}.
+                </Text>
+              ) : null}
             </View>
 
             <View style={styles.infoRow}>
@@ -629,6 +755,8 @@ export default function ScannerScreen() {
 
     const nextZone = product.suggestedZone;
     setStorage(nextZone);
+    setIsHomemadeFrozen(false);
+    setHomemadeFrozenType('plat_cuisine');
     setExpirationDate(defaultExpirationDate(nextZone));
 
     const purchaseDetails = inferPurchaseDetails(product);
@@ -899,6 +1027,21 @@ const styles = StyleSheet.create({
   },
   fieldBlock: {
     gap: 8,
+  },
+  homemadeCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 12,
+  },
+  homemadeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  homemadeTextWrap: {
+    flex: 1,
+    gap: 2,
   },
   textField: {
     height: 44,
