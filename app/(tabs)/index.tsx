@@ -19,7 +19,7 @@ import { ListMenuSheet } from '@/components/sheets/list-menu-sheet';
 import { NotificationsSheet } from '@/components/sheets/notifications-sheet';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Typography } from '@/constants/theme';
-import { DisplayMode, inferLowStock, InventoryProduct, zoneIconMap } from '@/data/inventory';
+import { DisplayMode, inferLowStock, zoneIconMap } from '@/data/inventory';
 import { useAppSettings } from '@/providers/app-settings-provider';
 import { useInventory } from '@/providers/inventory-provider';
 import { useShoppingLists } from '@/providers/shopping-lists-provider';
@@ -45,8 +45,9 @@ export default function HomeScreen() {
   const { palette } = useAppTheme();
   const { products, isHydrating } = useInventory();
   const { lists: shoppingLists } = useShoppingLists();
-  const { expiringSoonDays, lowStockThreshold } = useAppSettings();
+  const { expiringSoonDays, lowStockThreshold, notifications } = useAppSettings();
   const scrollRef = useRef<ScrollView>(null);
+  const hasAutoOpenedNotifications = useRef(false);
 
   const [isListMenuOpen, setIsListMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -55,6 +56,7 @@ export default function HomeScreen() {
   const [isLowStockExpanded, setIsLowStockExpanded] = useState(false);
   const [expandedShoppingListId, setExpandedShoppingListId] = useState<string | null>(null);
   const shoppingListLastPressRef = useRef<{ id: string; time: number } | null>(null);
+  const hasActiveSearch = searchValue.trim().length > 0;
 
   const filteredProducts = useMemo(() => {
     if (!searchValue.trim()) return products;
@@ -85,6 +87,24 @@ export default function HomeScreen() {
     [filteredProducts]
   );
 
+  const searchResults = useMemo(() => {
+    if (!hasActiveSearch) {
+      return [];
+    }
+
+    return [...filteredProducts]
+      .sort((a, b) => {
+        const rankA = a.expiresAt ? daysUntil(a.expiresAt) : Number.MAX_SAFE_INTEGER;
+        const rankB = b.expiresAt ? daysUntil(b.expiresAt) : Number.MAX_SAFE_INTEGER;
+        if (rankA !== rankB) {
+          return rankA - rankB;
+        }
+
+        return b.addedAt.localeCompare(a.addedAt);
+      })
+      .slice(0, 12);
+  }, [filteredProducts, hasActiveSearch]);
+
   const recipeTeaser = useMemo(
     () => buildRecipeSuggestions(filteredProducts, { expiringSoonDays }).slice(0, 3),
     [expiringSoonDays, filteredProducts]
@@ -96,6 +116,36 @@ export default function HomeScreen() {
   );
 
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+
+  useEffect(() => {
+    if (isHydrating || hasAutoOpenedNotifications.current) {
+      return;
+    }
+
+    const hasExpiringAlert =
+      notifications.expiring &&
+      products.some((product) => product.expiresAt && daysUntil(product.expiresAt) <= expiringSoonDays);
+    const hasLowStockAlert =
+      notifications.lowStock &&
+      products.some(
+        (product) =>
+          inferLowStock(product, lowStockThreshold) &&
+          typeof product.initialQuantity === 'number' &&
+          product.initialQuantity > product.quantity
+      );
+
+    hasAutoOpenedNotifications.current = true;
+
+    if (!hasExpiringAlert && !hasLowStockAlert) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setIsNotificationsOpen(true);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [expiringSoonDays, isHydrating, lowStockThreshold, notifications.expiring, notifications.lowStock, products]);
 
   const openScanner = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -187,6 +237,56 @@ export default function HomeScreen() {
             </Pressable>
           )}
         </View>
+
+        {hasActiveSearch && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>Resultats de recherche</Text>
+              <View style={[styles.countPill, { backgroundColor: palette.glowSecondary }]}>
+                <Text style={[styles.countPillText, { color: palette.accentPrimary }]}>{filteredProducts.length}</Text>
+              </View>
+            </View>
+
+            {searchResults.length === 0 ? (
+              <View style={[styles.emptyBox, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
+                <IconSymbol name="magnifyingglass" size={24} color={palette.textTertiary} />
+                <Text style={[styles.emptyText, { color: palette.textSecondary }]}>
+                  Aucun produit ne correspond a cette recherche.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.urgentList}>
+                {searchResults.map((product) => (
+                  <Pressable
+                    key={`search-${product.id}`}
+                    onPress={() => openProduct(product.id)}
+                    style={({ pressed }) => [
+                      styles.urgentRow,
+                      {
+                        backgroundColor: pressed ? palette.surfacePressed : palette.surface,
+                        shadowColor: palette.shadowDark,
+                      },
+                    ]}>
+                    <View style={[styles.urgentIndicator, { backgroundColor: palette.accentPrimary }]} />
+                    <View style={styles.urgentText}>
+                      <Text style={[styles.urgentName, { color: palette.textPrimary }]} numberOfLines={1}>
+                        {product.name}
+                      </Text>
+                      <Text style={[styles.urgentMeta, { color: palette.textSecondary }]}>
+                        {zoneLabel(product.zone)} · {product.expiresAt ? formatFullDate(product.expiresAt) : 'Sans date'}
+                      </Text>
+                    </View>
+                    <View style={[styles.quantityPill, { backgroundColor: palette.glowSecondary }]}>
+                      <Text style={[Typography.labelSm, { color: palette.accentPrimary }]}>
+                        {product.quantity} {product.unit}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
         {/* ── Zones rapides ── */}
         <View style={styles.section}>
@@ -840,6 +940,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
+  },
+  quantityPill: {
+    marginRight: 12,
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   urgentBadgeText: {
     fontSize: 12,

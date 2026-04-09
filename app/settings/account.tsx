@@ -125,7 +125,7 @@ export default function AccountSettingsScreen() {
             <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Maintenance</Text>
           </View>
           <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-            Nettoie l'application en repartant d'un inventaire vide.
+            Nettoie l&apos;application en repartant d&apos;un inventaire vide.
           </Text>
 
           <View style={styles.maintenanceActions}>
@@ -152,7 +152,7 @@ export default function AccountSettingsScreen() {
                 { backgroundColor: pressed ? '#B91C1C' : palette.danger },
               ]}>
               <IconSymbol name="trash.fill" size={14} color={palette.textInverse} />
-              <Text style={[Typography.labelMd, { color: palette.textInverse }]}>Vider l'inventaire local</Text>
+              <Text style={[Typography.labelMd, { color: palette.textInverse }]}>Vider l&apos;inventaire local</Text>
             </Pressable>
           </View>
         </View>

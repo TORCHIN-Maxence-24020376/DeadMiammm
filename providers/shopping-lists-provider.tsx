@@ -9,6 +9,7 @@ import {
   ShoppingListItem,
   ShoppingListStatus,
 } from '@/data/shopping-lists';
+import { createSeedShoppingLists } from '@/data/seed';
 
 const SHOPPING_LISTS_STORAGE_KEY = 'deadmiammm.shopping-lists.v2';
 
@@ -47,14 +48,30 @@ export function ShoppingListsProvider({ children }: { children: React.ReactNode 
       try {
         const raw = await AsyncStorage.getItem(SHOPPING_LISTS_STORAGE_KEY);
         if (!raw) {
+          const seededLists = createSeedShoppingLists();
+          await AsyncStorage.setItem(SHOPPING_LISTS_STORAGE_KEY, JSON.stringify(seededLists));
           if (isMounted) {
-            setLists([createDefaultList()]);
+            setLists(seededLists);
           }
           return;
         }
 
         const parsed = JSON.parse(raw) as unknown;
         const normalized = sanitizeStoredLists(parsed);
+        const shouldSeedDemoLists =
+          normalized.length === 1 &&
+          normalized[0].name === DEFAULT_SHOPPING_LIST_NAME &&
+          normalized[0].items.length === 0 &&
+          normalized[0].status === 'active';
+
+        if (shouldSeedDemoLists) {
+          const seededLists = createSeedShoppingLists();
+          await AsyncStorage.setItem(SHOPPING_LISTS_STORAGE_KEY, JSON.stringify(seededLists));
+          if (isMounted) {
+            setLists(seededLists);
+          }
+          return;
+        }
 
         if (isMounted) {
           setLists(normalized);

@@ -1,7 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { AddInventoryProductInput, InventoryProduct, StorageZone } from '@/data/inventory';
+import {
+  AddInventoryProductInput,
+  clampConsumptionPercent,
+  InventoryProduct,
+  resolveInitialQuantity,
+  StorageZone,
+  UpdateInventoryProductInput,
+} from '@/data/inventory';
+import { createSeedInventoryProducts } from '@/data/seed';
 import { isValidDateString } from '@/utils/format';
 
 const INVENTORY_STORAGE_KEY = 'deadmiammm.inventory.v1';
@@ -11,6 +19,9 @@ type InventoryContextValue = {
   products: InventoryProduct[];
   isHydrating: boolean;
   addProduct: (input: AddInventoryProductInput) => Promise<InventoryProduct>;
+  updateProduct: (id: string, input: UpdateInventoryProductInput) => Promise<boolean>;
+  updateProductConsumption: (id: string, percent: number) => Promise<void>;
+  consumeProductUnit: (id: string) => Promise<'updated' | 'removed' | 'not-found'>;
   removeProduct: (id: string) => Promise<void>;
   clearProducts: () => Promise<void>;
 };
@@ -28,6 +39,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       try {
         const raw = await AsyncStorage.getItem(INVENTORY_STORAGE_KEY);
         if (!raw) {
+          const seededProducts = createSeedInventoryProducts();
+          await AsyncStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(seededProducts));
+          if (isMounted) {
+            setProducts(seededProducts);
+          }
           return;
         }
 
@@ -39,6 +55,15 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         const normalized = parsed
           .map((entry) => sanitizeStoredProduct(entry))
           .filter((entry): entry is InventoryProduct => Boolean(entry));
+
+        if (normalized.length === 0) {
+          const seededProducts = createSeedInventoryProducts();
+          await AsyncStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(seededProducts));
+          if (isMounted) {
+            setProducts(seededProducts);
+          }
+          return;
+        }
 
         if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
           await AsyncStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(normalized));
@@ -56,7 +81,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    hydrate();
+    void hydrate();
 
     return () => {
       isMounted = false;
@@ -78,11 +103,118 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         ...input,
         id: createId(),
         addedAt: new Date().toISOString(),
+        initialQuantity: resolveInitialQuantity({
+          quantity: input.quantity,
+          initialQuantity: input.initialQuantity,
+        }),
+        consumptionPercent: clampConsumptionPercent(input.consumptionPercent),
       };
 
       const nextProducts = [nextProduct, ...products];
       await persistProducts(nextProducts);
       return nextProduct;
+    },
+    [persistProducts, products]
+  );
+
+  const updateProductConsumption = useCallback(
+    async (id: string, percent: number) => {
+      const nextPercent = clampConsumptionPercent(percent);
+      const nextProducts = products.map((product) => {
+        if (product.id !== id) {
+          return product;
+        }
+
+        if ((product.consumptionPercent ?? 0) === nextPercent) {
+          return product;
+        }
+
+        return {
+          ...product,
+          consumptionPercent: nextPercent,
+        };
+      });
+
+      await persistProducts(nextProducts);
+    },
+    [persistProducts, products]
+  );
+
+  const updateProduct = useCallback(
+    async (id: string, input: UpdateInventoryProductInput) => {
+      const normalizedName = optionalString(input.name);
+      const normalizedUnit = optionalString(input.unit);
+      const normalizedExpiresAt = input.expiresAt === null ? null : normalizeExpiresAt(input.expiresAt);
+      if (!normalizedName || !normalizedUnit) {
+        return false;
+      }
+
+      if (input.expiresAt !== null && normalizedExpiresAt === null) {
+        return false;
+      }
+
+      let found = false;
+      const nextProducts = products.map((product) => {
+        if (product.id !== id) {
+          return product;
+        }
+
+        found = true;
+        const nextQuantity = sanitizeQuantity(input.quantity);
+        return {
+          ...product,
+          name: normalizedName,
+          zone: isStorageZone(input.zone) ? input.zone : product.zone,
+          expiresAt: normalizedExpiresAt,
+          quantity: nextQuantity,
+          initialQuantity: Math.max(resolveInitialQuantity(product), nextQuantity),
+          consumptionPercent:
+            nextQuantity > product.quantity
+              ? 0
+              : clampConsumptionPercent(product.consumptionPercent),
+          unit: normalizedUnit,
+          category: optionalString(input.category),
+          format: optionalString(input.format),
+        };
+      });
+
+      if (!found) {
+        return false;
+      }
+
+      await persistProducts(nextProducts);
+      return true;
+    },
+    [persistProducts, products]
+  );
+
+  const consumeProductUnit = useCallback(
+    async (id: string) => {
+      const current = products.find((product) => product.id === id);
+      if (!current) {
+        return 'not-found';
+      }
+
+      if (current.quantity <= 1) {
+        const nextProducts = products.filter((product) => product.id !== id);
+        await persistProducts(nextProducts);
+        return 'removed';
+      }
+
+      const nextProducts = products.map((product) => {
+        if (product.id !== id) {
+          return product;
+        }
+
+        return {
+          ...product,
+          quantity: sanitizeQuantity(product.quantity - 1),
+          consumptionPercent: 0,
+        };
+      });
+
+      await persistProducts(nextProducts);
+      return 'updated';
     },
     [persistProducts, products]
   );
@@ -104,10 +236,22 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       products,
       isHydrating,
       addProduct,
+      updateProduct,
+      updateProductConsumption,
+      consumeProductUnit,
       removeProduct,
       clearProducts,
     }),
-    [addProduct, clearProducts, isHydrating, products, removeProduct]
+    [
+      addProduct,
+      clearProducts,
+      consumeProductUnit,
+      isHydrating,
+      products,
+      removeProduct,
+      updateProduct,
+      updateProductConsumption,
+    ]
   );
 
   return <InventoryContext.Provider value={value}>{children}</InventoryContext.Provider>;
@@ -141,7 +285,12 @@ function sanitizeStoredProduct(entry: unknown): InventoryProduct | null {
 
   const zone = isStorageZone(candidate.zone) ? candidate.zone : 'autre';
   const quantity = sanitizeQuantity(candidate.quantity);
-  const unit = optionalString(candidate.unit) ?? 'unité';
+  const initialQuantity = resolveInitialQuantity({
+    quantity,
+    initialQuantity: typeof candidate.initialQuantity === 'number' ? candidate.initialQuantity : undefined,
+  });
+  const consumptionPercent = clampConsumptionPercent(candidate.consumptionPercent);
+  const unit = optionalString(candidate.unit) ?? 'unite';
   const addedAt = normalizeDateTime(candidate.addedAt);
 
   return {
@@ -152,6 +301,8 @@ function sanitizeStoredProduct(entry: unknown): InventoryProduct | null {
     zone,
     expiresAt: normalizeExpiresAt(candidate.expiresAt),
     quantity,
+    initialQuantity,
+    consumptionPercent,
     unit,
     addedAt,
     category: optionalString(candidate.category),

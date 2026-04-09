@@ -2,8 +2,8 @@ import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Radii, Typography } from '@/constants/theme';
+import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
+import { Typography } from '@/constants/theme';
 import { useAppSettings } from '@/providers/app-settings-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 
@@ -11,7 +11,7 @@ type NotificationSetting = {
   key: 'expiring' | 'lowStock' | 'recipes';
   title: string;
   subtitle: string;
-  icon: string;
+  icon: IconSymbolName;
   color: string;
 };
 
@@ -65,7 +65,7 @@ export default function NotificationSettingsScreen() {
         <View style={[styles.infoCard, { backgroundColor: palette.glowSecondary }]}>
           <IconSymbol name="bell.badge" size={16} color={palette.accentPrimary} />
           <Text style={[Typography.bodySm, { color: palette.textSecondary, flex: 1 }]}>
-            Ajuste les alertes qui t'aident au quotidien sans surcharge.
+            Ajuste les alertes qui t&apos;aident au quotidien sans surcharge.
           </Text>
         </View>
 

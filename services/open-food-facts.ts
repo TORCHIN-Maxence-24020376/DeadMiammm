@@ -13,6 +13,15 @@ export type OpenFoodFactsProduct = {
   nutrition?: NutritionFacts;
 };
 
+export type LocalDBHistoryEntry = {
+  id: string;
+  type: 'barcode' | 'search';
+  term: string;
+  label: string;
+  resultCount: number;
+  createdAt: string;
+};
+
 type ProductResponse = {
   status: number;
   code?: string;
@@ -54,13 +63,17 @@ const PRODUCT_FIELDS = [
 ].join(',');
 
 const PRODUCT_CACHE_STORAGE_KEY_PREFIX = 'deadmiammm.off-product-cache.v1.';
+const PRODUCT_HISTORY_STORAGE_KEY = 'deadmiammm.off-history.v1';
 const productMemoryCache = new Map<string, OpenFoodFactsProduct>();
+let historyMemoryCache: LocalDBHistoryEntry[] | null = null;
 const PRODUCT_CACHE_SCHEMA_VERSION = 1;
+const PRODUCT_HISTORY_SCHEMA_VERSION = 1;
 const MAX_NAME_LENGTH = 180;
 const MAX_LABEL_LENGTH = 280;
 const MAX_CATEGORIES = 80;
 const MAX_CATEGORY_LENGTH = 120;
 const MAX_NUTRITION_VALUE = 100_000;
+const MAX_HISTORY_ENTRIES = 50;
 
 type CachedProductPayload = {
   version: number;
@@ -71,6 +84,11 @@ type CachedProductPayload = {
 
 type LegacyCachedProductPayload = {
   product?: unknown;
+};
+
+type CachedHistoryPayload = {
+  version: number;
+  entries: LocalDBHistoryEntry[];
 };
 
 export class OpenFoodFactsError extends Error {
@@ -111,6 +129,12 @@ export async function fetchProductByBarcode(barcode: string): Promise<OpenFoodFa
 
   const cachedProduct = await readCachedProduct(normalizedBarcode);
   if (cachedProduct && hasSufficientProductData(cachedProduct)) {
+    await appendHistoryEntry({
+      type: 'barcode',
+      term: normalizedBarcode,
+      label: cachedProduct.name,
+      resultCount: 1,
+    });
     return cachedProduct;
   }
 
@@ -125,14 +149,34 @@ export async function fetchProductByBarcode(barcode: string): Promise<OpenFoodFa
 
     const payload = (await response.json()) as ProductResponse;
     if (payload.status !== 1 || !payload.product) {
+      if (cachedProduct) {
+        await appendHistoryEntry({
+          type: 'barcode',
+          term: normalizedBarcode,
+          label: cachedProduct.name,
+          resultCount: 1,
+        });
+      }
       return cachedProduct ?? null;
     }
 
     const normalizedProduct = normalizeProduct(payload.product, payload.code ?? normalizedBarcode);
     await cacheProduct(normalizedProduct);
+    await appendHistoryEntry({
+      type: 'barcode',
+      term: normalizedBarcode,
+      label: normalizedProduct.name,
+      resultCount: 1,
+    });
     return normalizedProduct;
   } catch (error) {
     if (cachedProduct) {
+      await appendHistoryEntry({
+        type: 'barcode',
+        term: normalizedBarcode,
+        label: cachedProduct.name,
+        resultCount: 1,
+      });
       return cachedProduct;
     }
 
@@ -162,6 +206,12 @@ export async function searchProductsByText(query: string): Promise<OpenFoodFacts
 
   const payload = (await response.json()) as SearchResponse;
   if (!payload.products || payload.products.length === 0) {
+    await appendHistoryEntry({
+      type: 'search',
+      term: trimmedQuery,
+      label: trimmedQuery,
+      resultCount: 0,
+    });
     return [];
   }
 
@@ -175,24 +225,35 @@ export async function searchProductsByText(query: string): Promise<OpenFoodFacts
     .filter((product): product is OpenFoodFactsProduct => Boolean(product));
 
   await cacheProducts(products);
+  await appendHistoryEntry({
+    type: 'search',
+    term: trimmedQuery,
+    label: trimmedQuery,
+    resultCount: products.length,
+  });
   return products;
 }
 
 export async function clearOpenFoodFactsProductCache() {
   productMemoryCache.clear();
+  historyMemoryCache = null;
 
   const keys = await AsyncStorage.getAllKeys();
   const cacheKeys = keys.filter((key) => key.startsWith(PRODUCT_CACHE_STORAGE_KEY_PREFIX));
-  if (cacheKeys.length === 0) {
-    return;
+  if (cacheKeys.length > 0) {
+    await AsyncStorage.multiRemove(cacheKeys);
   }
 
-  await AsyncStorage.multiRemove(cacheKeys);
+  await AsyncStorage.removeItem(PRODUCT_HISTORY_STORAGE_KEY);
 }
 
 export async function getOpenFoodFactsProductCacheCount() {
   const keys = await AsyncStorage.getAllKeys();
   return keys.filter((key) => key.startsWith(PRODUCT_CACHE_STORAGE_KEY_PREFIX)).length;
+}
+
+export async function getOpenFoodFactsLocalDBHistory() {
+  return readHistoryEntries();
 }
 
 async function cacheProducts(products: OpenFoodFactsProduct[]) {
@@ -365,6 +426,106 @@ function sanitizeNutrition(value: unknown): NutritionFacts | undefined {
   return nutrition;
 }
 
+async function readHistoryEntries() {
+  if (historyMemoryCache) {
+    return historyMemoryCache;
+  }
+
+  try {
+    const raw = await AsyncStorage.getItem(PRODUCT_HISTORY_STORAGE_KEY);
+    if (!raw) {
+      historyMemoryCache = [];
+      return historyMemoryCache;
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    const entries = sanitizeHistoryPayload(parsed);
+    historyMemoryCache = entries;
+
+    if (!isHistoryPayloadShapeValid(parsed)) {
+      await persistHistoryEntries(entries);
+    }
+
+    return entries;
+  } catch (error) {
+    console.warn('OpenFoodFacts history read failed:', error);
+    historyMemoryCache = [];
+    return historyMemoryCache;
+  }
+}
+
+async function appendHistoryEntry(entry: Omit<LocalDBHistoryEntry, 'id' | 'createdAt'>) {
+  const nextEntry: LocalDBHistoryEntry = {
+    id: `${entry.type}:${entry.term}:${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    ...entry,
+  };
+
+  const currentEntries = await readHistoryEntries();
+  const nextEntries = [nextEntry, ...currentEntries.filter((item) => !(item.type === nextEntry.type && item.term === nextEntry.term))]
+    .slice(0, MAX_HISTORY_ENTRIES);
+
+  await persistHistoryEntries(nextEntries);
+}
+
+async function persistHistoryEntries(entries: LocalDBHistoryEntry[]) {
+  historyMemoryCache = entries;
+
+  try {
+    const payload: CachedHistoryPayload = {
+      version: PRODUCT_HISTORY_SCHEMA_VERSION,
+      entries,
+    };
+
+    await AsyncStorage.setItem(PRODUCT_HISTORY_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.warn('OpenFoodFacts history write failed:', error);
+  }
+}
+
+function sanitizeHistoryPayload(value: unknown) {
+  const rawEntries =
+    value && typeof value === 'object' && Array.isArray((value as Partial<CachedHistoryPayload>).entries)
+      ? (value as CachedHistoryPayload).entries
+      : Array.isArray(value)
+        ? value
+        : [];
+
+  return rawEntries
+    .map((entry) => sanitizeHistoryEntry(entry))
+    .filter((entry): entry is LocalDBHistoryEntry => Boolean(entry))
+    .slice(0, MAX_HISTORY_ENTRIES);
+}
+
+function sanitizeHistoryEntry(value: unknown): LocalDBHistoryEntry | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<LocalDBHistoryEntry>;
+  const type = candidate.type === 'barcode' || candidate.type === 'search' ? candidate.type : null;
+  const term = normalizeString(candidate.term);
+  const label = sanitizeLabel(candidate.label);
+  const createdAt = isValidDateTimeString(candidate.createdAt) ? candidate.createdAt : null;
+  const resultCount =
+    typeof candidate.resultCount === 'number' && Number.isFinite(candidate.resultCount) && candidate.resultCount >= 0
+      ? Math.round(candidate.resultCount)
+      : null;
+
+  if (!type || !term || !label || !createdAt || resultCount === null) {
+    return null;
+  }
+
+  return {
+    id: normalizeString(candidate.id) ?? `${type}:${term}:${createdAt}`,
+    type,
+    term,
+    label,
+    resultCount,
+    createdAt,
+  };
+}
+
 function dedupeProductsByBarcode(products: OpenFoodFactsProduct[]) {
   const map = new Map<string, OpenFoodFactsProduct>();
 
@@ -471,6 +632,15 @@ function isCachePayloadShapeValid(value: unknown, expectedBarcode?: string): val
   }
 
   return 'product' in candidate;
+}
+
+function isHistoryPayloadShapeValid(value: unknown): value is CachedHistoryPayload {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<CachedHistoryPayload>;
+  return candidate.version === PRODUCT_HISTORY_SCHEMA_VERSION && Array.isArray(candidate.entries);
 }
 
 function isLegacyCachedPayload(value: unknown): value is LegacyCachedProductPayload {

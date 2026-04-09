@@ -1,13 +1,13 @@
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, LayoutChangeEvent, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Radii, Typography } from '@/constants/theme';
-import { sourceLabels, zoneIconMap } from '@/data/inventory';
+import { inferConsumptionPercent, resolveInitialQuantity, sourceLabels, StorageZone, zoneIconMap, zoneLabels } from '@/data/inventory';
 import { useInventory } from '@/providers/inventory-provider';
 import { useAppTheme } from '@/providers/theme-provider';
 import { formatFullDate, zoneLabel } from '@/utils/format';
@@ -21,13 +21,27 @@ const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('fr-FR', {
   minute: '2-digit',
 });
 
+const EDITABLE_ZONES: StorageZone[] = ['frigo', 'congelateur', 'sec', 'autre'];
+
 export default function ProductDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const { palette } = useAppTheme();
-  const { products, removeProduct } = useInventory();
+  const { products, consumeProductUnit, removeProduct, updateProduct, updateProductConsumption } = useInventory();
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [sliderWidth, setSliderWidth] = useState(1);
+  const [sliderPercent, setSliderPercent] = useState(0);
+  const sliderPercentRef = useRef(0);
+  const [editName, setEditName] = useState('');
+  const [editQuantityInput, setEditQuantityInput] = useState('1');
+  const [editUnit, setEditUnit] = useState('');
+  const [editZone, setEditZone] = useState<StorageZone>('sec');
+  const [editExpiresAt, setEditExpiresAt] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editFormat, setEditFormat] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
 
   const productId = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -43,12 +57,31 @@ export default function ProductDetailsScreen() {
     return buildNutritionRows(product?.nutrition);
   }, [product]);
 
+  useEffect(() => {
+    setSliderPercent(product?.consumptionPercent ?? 0);
+  }, [product?.id, product?.consumptionPercent]);
+
+  useEffect(() => {
+    sliderPercentRef.current = sliderPercent;
+  }, [sliderPercent]);
+
+  const initialQuantity = product ? resolveInitialQuantity(product) : 1;
+  const consumptionPercent = product ? inferConsumptionPercent(product) : 0;
+
   const onDeleteProduct = () => {
     if (!product) {
       return;
     }
 
-    Alert.alert('Supprimer le produit ?', `Le produit "${product.name}" sera retiré de l'inventaire local.`, [
+    if (Platform.OS === 'web' && typeof globalThis.confirm === 'function') {
+      const confirmed = globalThis.confirm(`Supprimer "${product.name}" de l'inventaire ?`);
+      if (confirmed) {
+        void handleDelete(product.id);
+      }
+      return;
+    }
+
+    Alert.alert('Supprimer le produit ?', `Le produit "${product.name}" sera retire de l'inventaire local.`, [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer',
@@ -58,6 +91,27 @@ export default function ProductDetailsScreen() {
         },
       },
     ]);
+  };
+
+  const onConsumeOneUnit = async () => {
+    if (!product) {
+      return;
+    }
+
+    const result = await consumeProductUnit(product.id);
+    if (result === 'not-found') {
+      return;
+    }
+
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    if (result === 'removed') {
+      onBack();
+      return;
+    }
+
+    sliderPercentRef.current = 0;
+    setSliderPercent(0);
   };
 
   const onBack = () => {
@@ -76,6 +130,125 @@ export default function ProductDetailsScreen() {
 
   const onCloseImageModal = () => {
     setIsImageModalOpen(false);
+  };
+
+  const onOpenEditModal = () => {
+    if (!product) {
+      return;
+    }
+
+    setEditName(product.name);
+    setEditQuantityInput(String(product.quantity));
+    setEditUnit(product.unit);
+    setEditZone(product.zone);
+    setEditExpiresAt(product.expiresAt ?? '');
+    setEditCategory(product.category ?? '');
+    setEditFormat(product.format ?? '');
+    setEditError(null);
+    setIsEditModalOpen(true);
+    Haptics.selectionAsync();
+  };
+
+  const onCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditError(null);
+  };
+
+  const onConsumptionTrackLayout = (event: LayoutChangeEvent) => {
+    setSliderWidth(Math.max(1, event.nativeEvent.layout.width));
+  };
+
+  const onSlideToLocation = useCallback(
+    (locationX: number) => {
+      const ratio = locationX / sliderWidth;
+      const nextPercent = toBoundedPercent(ratio * 100);
+      sliderPercentRef.current = nextPercent;
+      setSliderPercent(nextPercent);
+    },
+    [sliderWidth]
+  );
+
+  const commitSliderPercent = useCallback(async () => {
+    if (!product) {
+      return;
+    }
+
+    const nextValue = toBoundedPercent(sliderPercentRef.current);
+    if (nextValue === (product.consumptionPercent ?? 0)) {
+      return;
+    }
+
+    await updateProductConsumption(product.id, nextValue);
+  }, [product, updateProductConsumption]);
+
+  const sliderResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (event) => {
+          onSlideToLocation(event.nativeEvent.locationX);
+        },
+        onPanResponderMove: (event) => {
+          onSlideToLocation(event.nativeEvent.locationX);
+        },
+        onPanResponderRelease: () => {
+          void commitSliderPercent();
+        },
+        onPanResponderTerminate: () => {
+          void commitSliderPercent();
+        },
+      }),
+    [commitSliderPercent, onSlideToLocation]
+  );
+
+  const onSaveEdit = async () => {
+    if (!product) {
+      return;
+    }
+
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      setEditError('Le nom est obligatoire.');
+      return;
+    }
+
+    const parsedQuantity = parsePositiveInteger(editQuantityInput);
+    if (!parsedQuantity) {
+      setEditError('La quantité doit être un entier positif.');
+      return;
+    }
+
+    const trimmedUnit = editUnit.trim();
+    if (!trimmedUnit) {
+      setEditError('L’unité est obligatoire.');
+      return;
+    }
+
+    const normalizedExpiresAt = normalizeEditableDate(editExpiresAt);
+    if (normalizedExpiresAt === 'invalid') {
+      setEditError('La date doit être au format YYYY-MM-DD.');
+      return;
+    }
+
+    const updated = await updateProduct(product.id, {
+      name: trimmedName,
+      quantity: parsedQuantity,
+      unit: trimmedUnit,
+      zone: editZone,
+      expiresAt: normalizedExpiresAt,
+      category: editCategory,
+      format: editFormat,
+    });
+
+    if (!updated) {
+      setEditError('Impossible de modifier cette entrée.');
+      return;
+    }
+
+    setEditError(null);
+    setIsEditModalOpen(false);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   return (
@@ -101,7 +274,7 @@ export default function ProductDetailsScreen() {
             <IconSymbol name="tray" size={28} color={palette.textTertiary} />
             <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Produit introuvable</Text>
             <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-              Il a peut-être déjà été supprimé ou déplacé.
+              Il a peut-etre deja ete supprime ou deplace.
             </Text>
             <Pressable
               onPress={() => router.replace('/')}
@@ -109,7 +282,7 @@ export default function ProductDetailsScreen() {
                 styles.primaryButton,
                 { backgroundColor: pressed ? palette.accentPrimaryStrong : palette.accentPrimary },
               ]}>
-              <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Retour à l'accueil</Text>
+              <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Retour a l&apos;accueil</Text>
             </Pressable>
           </View>
         </View>
@@ -122,8 +295,6 @@ export default function ProductDetailsScreen() {
             paddingBottom: insets.bottom + 20,
             gap: 14,
           }}>
-
-          {/* Hero product card */}
           <View style={[styles.heroCard, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
             <View style={[styles.heroAccent, { backgroundColor: palette.accentPrimary }]} />
             <View style={styles.heroContent}>
@@ -153,37 +324,113 @@ export default function ProductDetailsScreen() {
               ) : null}
 
               <View style={styles.metaGrid}>
-                <MetaChip
-                  label="Quantité"
-                  value={`${product.quantity} ${product.unit}`}
-                  palette={palette}
-                />
+                <MetaChip label="Quantite" value={`${product.quantity} ${product.unit}`} palette={palette} />
                 <MetaChip
                   label="Expiration"
                   value={product.expiresAt ? formatFullDate(product.expiresAt) : 'Sans date'}
                   palette={palette}
                   highlight={!!product.expiresAt}
                 />
-                <MetaChip label="Format" value={product.format ?? '—'} palette={palette} />
-                <MetaChip label="Catégorie" value={product.category ?? '—'} palette={palette} />
+                <MetaChip label="Format" value={product.format ?? '-'} palette={palette} />
+                <MetaChip label="Categorie" value={product.category ?? '-'} palette={palette} />
+              </View>
+
+              <View style={[styles.progressCard, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+                <View style={styles.progressHeader}>
+                  <View style={styles.progressText}>
+                    <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Avancement global</Text>
+                    <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                      {product.quantity} restant{product.quantity > 1 ? 's' : ''} sur {initialQuantity}
+                    </Text>
+                  </View>
+                  <View style={[styles.progressBadge, { backgroundColor: palette.glowSecondary }]}>
+                    <Text style={[Typography.labelSm, { color: palette.accentPrimary }]}>{consumptionPercent}% utilise</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.progressTrack, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${consumptionPercent}%`,
+                        backgroundColor: palette.accentPrimary,
+                      },
+                    ]}
+                  />
+                </View>
+
+                <View style={[styles.liveProgressCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+                  <View style={styles.liveProgressHeader}>
+                    <View style={styles.progressText}>
+                      <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Consommation en cours</Text>
+                      <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                        Glisse pour suivre le produit entame en temps reel.
+                      </Text>
+                    </View>
+                    <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>{sliderPercent}%</Text>
+                  </View>
+
+                  <View style={styles.sliderScale}>
+                    <Text style={[Typography.caption, { color: palette.textTertiary }]}>0%</Text>
+                    <Text style={[Typography.caption, { color: palette.textTertiary }]}>100%</Text>
+                  </View>
+
+                  <View style={styles.progressTouchArea} onLayout={onConsumptionTrackLayout} {...sliderResponder.panHandlers}>
+                    <View style={[styles.progressTrack, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: `${sliderPercent}%`,
+                            backgroundColor: palette.accentPrimary,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <View
+                      style={[
+                        styles.progressThumb,
+                        {
+                          left: ((sliderWidth - 18) * sliderPercent) / 100,
+                          backgroundColor: palette.accentPrimary,
+                          borderColor: palette.surface,
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
+
+                <Pressable
+                  onPress={() => {
+                    void onConsumeOneUnit();
+                  }}
+                  style={({ pressed }) => [
+                    styles.consumeButton,
+                    { backgroundColor: pressed ? palette.surfacePressed : palette.surface },
+                  ]}>
+                  <IconSymbol name="minus" size={14} color={palette.textPrimary} />
+                  <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>
+                    {product.quantity > 1 ? 'Retirer 1 unite du paquet' : 'Consommer le dernier produit'}
+                  </Text>
+                </Pressable>
               </View>
 
               <View style={styles.metaList}>
                 <InfoRow label="Origine" value={sourceLabels[product.source]} palette={palette} />
                 <InfoRow label="Code-barres" value={product.barcode ?? 'Non disponible'} palette={palette} />
-                <InfoRow label="Ajouté le" value={formatDateTime(product.addedAt)} palette={palette} />
+                <InfoRow label="Ajoute le" value={formatDateTime(product.addedAt)} palette={palette} />
               </View>
             </View>
           </View>
 
-          {/* Nutrition */}
           <View style={[styles.card, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
             <View style={styles.sectionTitle}>
               <View style={[styles.sectionDot, { backgroundColor: palette.info }]} />
               <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Informations nutritionnelles</Text>
             </View>
             {nutritionRows.length === 0 ? (
-              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Aucune donnée nutritionnelle disponible.</Text>
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>Aucune donnee nutritionnelle disponible.</Text>
             ) : (
               <View style={styles.metaList}>
                 <Text style={[Typography.caption, { color: palette.textTertiary }]}>Valeurs pour 100 g / 100 ml</Text>
@@ -194,7 +441,16 @@ export default function ProductDetailsScreen() {
             )}
           </View>
 
-          {/* Delete button */}
+          <Pressable
+            onPress={onOpenEditModal}
+            style={({ pressed }) => [
+              styles.editButton,
+              { backgroundColor: pressed ? palette.surfacePressed : palette.surface },
+            ]}>
+            <IconSymbol name="pencil" size={16} color={palette.textPrimary} />
+            <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Modifier l’entrée</Text>
+          </Pressable>
+
           <Pressable
             onPress={onDeleteProduct}
             style={({ pressed }) => [
@@ -226,6 +482,159 @@ export default function ProductDetailsScreen() {
           ) : null}
         </View>
       </Modal>
+
+      <Modal visible={isEditModalOpen} transparent animationType="fade" onRequestClose={onCloseEditModal}>
+        <View style={[styles.editModalBackdrop, { backgroundColor: 'rgba(2, 6, 23, 0.55)' }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onCloseEditModal} />
+          <View style={[styles.editModalSheet, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+            <View style={styles.editHeader}>
+              <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Modifier l’entrée</Text>
+              <Pressable
+                onPress={onCloseEditModal}
+                style={({ pressed }) => [
+                  styles.iconButton,
+                  { backgroundColor: pressed ? palette.surfacePressed : palette.surfaceSoft },
+                ]}>
+                <IconSymbol name="xmark" size={16} color={palette.textPrimary} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.editForm}>
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Nom</Text>
+                <TextInput
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="Nom du produit"
+                  placeholderTextColor={palette.textTertiary}
+                  style={[
+                    styles.fieldInput,
+                    Typography.bodyMd,
+                    { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.fieldRow}>
+                <View style={styles.fieldCol}>
+                  <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Quantité</Text>
+                  <TextInput
+                    value={editQuantityInput}
+                    onChangeText={setEditQuantityInput}
+                    keyboardType="number-pad"
+                    placeholder="1"
+                    placeholderTextColor={palette.textTertiary}
+                    style={[
+                      styles.fieldInput,
+                      Typography.bodyMd,
+                      { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft },
+                    ]}
+                  />
+                </View>
+
+                <View style={styles.fieldCol}>
+                  <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Unité</Text>
+                  <TextInput
+                    value={editUnit}
+                    onChangeText={setEditUnit}
+                    placeholder="unité"
+                    placeholderTextColor={palette.textTertiary}
+                    style={[
+                      styles.fieldInput,
+                      Typography.bodyMd,
+                      { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Date d’expiration</Text>
+                <TextInput
+                  value={editExpiresAt}
+                  onChangeText={setEditExpiresAt}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={palette.textTertiary}
+                  style={[
+                    styles.fieldInput,
+                    Typography.bodyMd,
+                    { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Zone</Text>
+                <View style={styles.zoneChoices}>
+                  {EDITABLE_ZONES.map((zone) => (
+                    <Pressable
+                      key={zone}
+                      onPress={() => setEditZone(zone)}
+                      style={[
+                        styles.zoneChoice,
+                        {
+                          backgroundColor: editZone === zone ? palette.accentPrimary : palette.surfaceSoft,
+                          borderColor: palette.border,
+                        },
+                      ]}>
+                      <Text style={[Typography.labelSm, { color: editZone === zone ? palette.textInverse : palette.textPrimary }]}>
+                        {zoneLabels[zone]}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Catégorie</Text>
+                <TextInput
+                  value={editCategory}
+                  onChangeText={setEditCategory}
+                  placeholder="Catégorie"
+                  placeholderTextColor={palette.textTertiary}
+                  style={[
+                    styles.fieldInput,
+                    Typography.bodyMd,
+                    { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Format / volume</Text>
+                <TextInput
+                  value={editFormat}
+                  onChangeText={setEditFormat}
+                  placeholder="Format"
+                  placeholderTextColor={palette.textTertiary}
+                  style={[
+                    styles.fieldInput,
+                    Typography.bodyMd,
+                    { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.surfaceSoft },
+                  ]}
+                />
+              </View>
+
+              {editError ? <Text style={[Typography.caption, { color: palette.danger }]}>{editError}</Text> : null}
+
+              <Pressable
+                onPress={() => {
+                  void onSaveEdit();
+                }}
+                style={({ pressed }) => [
+                  styles.saveEditButton,
+                  { backgroundColor: pressed ? palette.accentPrimaryStrong : palette.accentPrimary },
+                ]}>
+                <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Enregistrer</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 
@@ -248,10 +657,11 @@ function MetaChip({
   highlight?: boolean;
 }) {
   return (
-    <View style={[
-      metaStyles.chip,
-      { backgroundColor: highlight ? palette.glowSecondary : palette.surfaceSoft },
-    ]}>
+    <View
+      style={[
+        metaStyles.chip,
+        { backgroundColor: highlight ? palette.glowSecondary : palette.surfaceSoft },
+      ]}>
       <Text style={[Typography.caption, { color: palette.textTertiary }]}>{label}</Text>
       <Text style={[Typography.labelMd, { color: highlight ? palette.accentPrimary : palette.textPrimary }]}>
         {value}
@@ -294,6 +704,53 @@ function formatDateTime(value: string) {
   }
 
   return DATE_TIME_FORMATTER.format(date);
+}
+
+function toBoundedPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function parsePositiveInteger(value: string) {
+  const cleaned = value.replace(/[^0-9]/g, '');
+  if (!cleaned) {
+    return null;
+  }
+
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return Math.round(parsed);
+}
+
+function normalizeEditableDate(value: string): string | null | 'invalid' {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return 'invalid';
+  }
+
+  return toLocalDateKey(parsed);
+}
+
+function toLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 const styles = StyleSheet.create({
@@ -392,6 +849,76 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  progressCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 12,
+    gap: 10,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  progressText: {
+    flex: 1,
+    gap: 2,
+  },
+  progressBadge: {
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressTrack: {
+    height: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    minWidth: 2,
+  },
+  liveProgressCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    gap: 10,
+  },
+  liveProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  sliderScale: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  progressTouchArea: {
+    height: 34,
+    justifyContent: 'center',
+  },
+  progressThumb: {
+    position: 'absolute',
+    top: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+  },
+  consumeButton: {
+    minHeight: 42,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+  },
   metaList: {
     gap: 10,
   },
@@ -412,6 +939,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.28,
     shadowRadius: 14,
     elevation: 5,
+  },
+  editButton: {
+    height: 52,
+    borderRadius: Radii.capsule,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 4,
   },
   emptyWrap: {
     flex: 1,
@@ -459,5 +998,62 @@ const styles = StyleSheet.create({
   imageModalImage: {
     width: '100%',
     height: '86%',
+  },
+  editModalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  editModalSheet: {
+    maxHeight: '90%',
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+  },
+  editHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editForm: {
+    gap: 10,
+    paddingBottom: 6,
+  },
+  fieldBlock: {
+    gap: 6,
+  },
+  fieldRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  fieldCol: {
+    flex: 1,
+    gap: 6,
+  },
+  fieldInput: {
+    minHeight: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  zoneChoices: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  zoneChoice: {
+    minHeight: 34,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  saveEditButton: {
+    height: 46,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

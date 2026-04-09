@@ -16,6 +16,14 @@ const actions = [
     color: '#16A34A',
   },
   {
+    key: 'history',
+    title: 'Historique',
+    subtitle: 'Recherches et scans OpenFoodFacts',
+    route: '/settings/history',
+    icon: 'clock.arrow.circlepath',
+    color: '#7C3AED',
+  },
+  {
     key: 'theme',
     title: 'Réglage thème',
     subtitle: 'Auto, clair ou sombre',

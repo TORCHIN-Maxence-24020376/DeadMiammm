@@ -110,7 +110,7 @@ export default function InventorySettingsScreen() {
         <View style={[styles.infoCard, { backgroundColor: palette.glowSecondary }]}>
           <IconSymbol name="info.circle" size={16} color={palette.accentPrimary} />
           <Text style={[Typography.bodySm, { color: palette.textSecondary, flex: 1 }]}>
-            Ces réglages pilotent l'accueil, les alertes, les recettes et la génération automatique de liste de courses.
+            Ces réglages pilotent l&apos;accueil, les alertes, les recettes et la génération automatique de liste de courses.
           </Text>
         </View>
       </View>

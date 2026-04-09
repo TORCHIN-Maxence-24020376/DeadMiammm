@@ -364,10 +364,14 @@ export default function ScannerScreen() {
                 <TextInput
                   value={searchQuery}
                   onChangeText={setSearchQuery}
+                  onSubmitEditing={() => {
+                    void onSearchFallback();
+                  }}
                   placeholder="Recherche OpenFoodFacts"
                   placeholderTextColor={palette.textTertiary}
                   style={[styles.searchInput, Typography.bodySm, { color: palette.textPrimary }]}
                   autoCapitalize="none"
+                  returnKeyType="search"
                 />
                 <Pressable onPress={onSearchFallback}>
                   <IconSymbol name="magnifyingglass" size={18} color={palette.accentPrimary} />

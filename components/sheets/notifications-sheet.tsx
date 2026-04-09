@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { AppPalette, Radii, Typography } from '@/constants/theme';
-import { inferLowStock } from '@/data/inventory';
+import { AppPalette, Typography } from '@/constants/theme';
+import { inferLowStock, resolveInitialQuantity } from '@/data/inventory';
 import { useAppSettings } from '@/providers/app-settings-provider';
 import { useInventory } from '@/providers/inventory-provider';
 import { daysUntil } from '@/utils/format';
@@ -17,8 +17,8 @@ type NotificationsSheetProps = {
 
 const ICON_COLORS = {
   'clock.badge.exclamationmark': '#D97706',
-  'checklist': '#DC2626',
-  'sparkles': '#16A34A',
+  checklist: '#DC2626',
+  sparkles: '#16A34A',
   'checkmark.circle.fill': '#16A34A',
 } as const;
 
@@ -29,30 +29,58 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
   const offsetY = useRef(new Animated.Value(400)).current;
 
   const notifications = useMemo(() => {
-    const items: { id: string; title: string; body: string; icon: 'clock.badge.exclamationmark' | 'checklist' | 'sparkles' | 'checkmark.circle.fill' }[] = [];
+    const items: {
+      id: string;
+      title: string;
+      body: string;
+      icon: 'clock.badge.exclamationmark' | 'checklist' | 'sparkles' | 'checkmark.circle.fill';
+    }[] = [];
 
     if (notificationSettings.expiring) {
-      const expiringCount = products.filter((product) => product.expiresAt && daysUntil(product.expiresAt) <= expiringSoonDays).length;
-      if (expiringCount > 0) {
-        items.push({
-          id: 'expiring',
-          title: `${expiringCount} produit${expiringCount > 1 ? 's' : ''} proche${expiringCount > 1 ? 's' : ''} de la date`,
-          body: `Seuil actif: ${expiringSoonDays} jour${expiringSoonDays > 1 ? 's' : ''}.`,
-          icon: 'clock.badge.exclamationmark',
+      products
+        .filter((product) => product.expiresAt)
+        .sort((a, b) => (a.expiresAt ?? '').localeCompare(b.expiresAt ?? ''))
+        .forEach((product) => {
+          const days = daysUntil(product.expiresAt);
+
+          if (days < 0) {
+            items.push({
+              id: `expired-${product.id}`,
+              title: product.name,
+              body: 'Ce produit est perime.',
+              icon: 'clock.badge.exclamationmark',
+            });
+            return;
+          }
+
+          if (days <= expiringSoonDays) {
+            items.push({
+              id: `expiring-${product.id}`,
+              title: product.name,
+              body: days === 0 ? "A consommer aujourd'hui." : `Perime dans ${days} jour${days > 1 ? 's' : ''}.`,
+              icon: 'clock.badge.exclamationmark',
+            });
+          }
         });
-      }
     }
 
     if (notificationSettings.lowStock) {
-      const lowStockCount = products.filter((product) => inferLowStock(product, lowStockThreshold)).length;
-      if (lowStockCount > 0) {
-        items.push({
-          id: 'low-stock',
-          title: `${lowStockCount} produit${lowStockCount > 1 ? 's' : ''} en stock faible`,
-          body: `Seuil actif: quantité <= ${lowStockThreshold}.`,
-          icon: 'checklist',
+      products
+        .filter(
+          (product) =>
+            inferLowStock(product, lowStockThreshold) && resolveInitialQuantity(product) > product.quantity
+        )
+        .forEach((product) => {
+          const initialQuantity = resolveInitialQuantity(product);
+          const suffix = initialQuantity > product.quantity ? ` sur ${initialQuantity}` : '';
+
+          items.push({
+            id: `low-stock-${product.id}`,
+            title: `${product.name} en stock faible`,
+            body: `Il reste ${product.quantity} ${product.unit}${suffix}.`,
+            icon: 'checklist',
+          });
         });
-      }
     }
 
     if (notificationSettings.recipes) {
@@ -60,7 +88,7 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
       if (recipes.length > 0) {
         items.push({
           id: 'recipes',
-          title: 'Nouvelle idée recette',
+          title: 'Nouvelle idee recette',
           body: recipes[0].title,
           icon: 'sparkles',
         });
@@ -79,7 +107,14 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
         icon: 'checkmark.circle.fill' as const,
       },
     ];
-  }, [expiringSoonDays, lowStockThreshold, notificationSettings.expiring, notificationSettings.lowStock, notificationSettings.recipes, products]);
+  }, [
+    expiringSoonDays,
+    lowStockThreshold,
+    notificationSettings.expiring,
+    notificationSettings.lowStock,
+    notificationSettings.recipes,
+    products,
+  ]);
 
   useEffect(() => {
     if (visible) {
@@ -138,7 +173,7 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
           </Pressable>
         </View>
 
-        <View style={styles.list}>
+        <ScrollView style={styles.listScroll} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           {notifications.map((item) => {
             const iconColor = ICON_COLORS[item.icon];
             return (
@@ -156,7 +191,7 @@ export function NotificationsSheet({ visible, palette, onClose }: NotificationsS
               </View>
             );
           })}
-        </View>
+        </ScrollView>
       </Animated.View>
     </Modal>
   );
@@ -196,8 +231,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  listScroll: {
+    maxHeight: 380,
+  },
   list: {
     gap: 10,
+    paddingBottom: 2,
   },
   notificationCard: {
     borderRadius: 18,

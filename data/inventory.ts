@@ -30,6 +30,8 @@ export type InventoryProduct = {
   zone: StorageZone;
   expiresAt: string | null;
   quantity: number;
+  initialQuantity?: number;
+  consumptionPercent?: number;
   unit: string;
   addedAt: string;
   category?: string;
@@ -39,6 +41,10 @@ export type InventoryProduct = {
 };
 
 export type AddInventoryProductInput = Omit<InventoryProduct, 'id' | 'addedAt'>;
+export type UpdateInventoryProductInput = Pick<
+  InventoryProduct,
+  'name' | 'zone' | 'expiresAt' | 'quantity' | 'unit' | 'category' | 'format'
+>;
 
 export const zoneLabels: Record<StorageZone, string> = {
   frigo: 'Frigo',
@@ -61,5 +67,42 @@ export const sourceLabels: Record<ProductSource, string> = {
 };
 
 export function inferLowStock(product: Pick<InventoryProduct, 'quantity'>, threshold = 1) {
-  return product.quantity <= threshold;
+  return normalizeQuantity(product.quantity) <= Math.max(1, Math.round(threshold));
+}
+
+export function resolveInitialQuantity(product: Pick<InventoryProduct, 'quantity' | 'initialQuantity'>) {
+  return Math.max(normalizeQuantity(product.quantity), normalizeQuantity(product.initialQuantity));
+}
+
+export function inferConsumptionPercent(
+  product: Pick<InventoryProduct, 'quantity' | 'initialQuantity' | 'consumptionPercent'>
+) {
+  const quantity = normalizeQuantity(product.quantity);
+  const initialQuantity = resolveInitialQuantity(product);
+  const currentUnitProgress = clampConsumptionPercent(product.consumptionPercent) / 100;
+
+  if (initialQuantity <= 0) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.min(100, Math.round((((initialQuantity - quantity) + currentUnitProgress) / initialQuantity) * 100))
+  );
+}
+
+export function clampConsumptionPercent(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function normalizeQuantity(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return 1;
+  }
+
+  return Math.max(1, Math.round(value));
 }

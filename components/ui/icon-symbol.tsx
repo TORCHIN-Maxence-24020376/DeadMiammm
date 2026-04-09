@@ -1,18 +1,8 @@
-// Fallback for using MaterialIcons on Android and web.
-
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
+import { SymbolWeight } from 'expo-symbols';
 import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
-type IconMapping = Record<SymbolViewProps['name'], ComponentProps<typeof MaterialIcons>['name']>;
-type IconSymbolName = keyof typeof MAPPING;
-
-/**
- * Add your SF Symbols to Material Icons mappings here.
- * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
- * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
- */
 const MAPPING = {
   'house.fill': 'home',
   'paperplane.fill': 'send',
@@ -20,11 +10,16 @@ const MAPPING = {
   'chevron.left': 'chevron-left',
   'chevron.right': 'chevron-right',
   'chevron.down': 'expand-more',
+  'chevron.up': 'expand-less',
+  'arrow.right': 'arrow-forward',
   'bell.badge': 'notifications',
+  'clock.arrow.circlepath': 'history',
+  clock: 'schedule',
   'camera.fill': 'photo-camera',
   'camera.viewfinder': 'center-focus-strong',
   'list.bullet.rectangle.portrait': 'fact-check',
   'person.crop.circle': 'account-circle',
+  'person.crop.circle.fill': 'account-circle',
   magnifyingglass: 'search',
   'square.grid.2x2': 'grid-view',
   'square.grid.2x2.fill': 'grid-on',
@@ -32,12 +27,18 @@ const MAPPING = {
   plus: 'add',
   minus: 'remove',
   circle: 'radio-button-unchecked',
+  'info.circle': 'info',
+  checkmark: 'check',
   'checkmark.circle.fill': 'check-circle',
   xmark: 'close',
+  'xmark.circle.fill': 'cancel',
   photo: 'photo',
+  'sun.max.fill': 'light-mode',
+  'moon.fill': 'dark-mode',
   refrigerator: 'kitchen',
   snowflake: 'ac-unit',
   'jar.fill': 'rice-bowl',
+  archivebox: 'inventory',
   'archivebox.fill': 'inventory-2',
   'ellipsis.circle.fill': 'more-horiz',
   'shippingbox.fill': 'inventory',
@@ -46,22 +47,22 @@ const MAPPING = {
   'bolt.fill': 'flash-on',
   'bolt.slash.fill': 'flash-off',
   'trash.fill': 'delete',
+  tray: 'inbox',
+  pencil: 'edit',
+  'flame.fill': 'local-fire-department',
   'fork.knife': 'restaurant',
   'clock.badge.exclamationmark': 'schedule',
   sparkles: 'auto-awesome',
   checklist: 'checklist',
   'circle.lefthalf.filled': 'brightness-3',
   'slider.horizontal.3': 'tune',
+  cart: 'shopping-cart',
   'cart.fill': 'shopping-cart',
   'note.text': 'assignment',
   'cart.badge.plus': 'add-shopping-cart',
-} as IconMapping;
+} as const satisfies Record<string, ComponentProps<typeof MaterialIcons>['name']>;
 
-/**
- * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.
- * This ensures a consistent look across platforms, and optimal resource usage.
- * Icon `name`s are based on SF Symbols and require manual mapping to Material Icons.
- */
+export type IconSymbolName = keyof typeof MAPPING;
 export function IconSymbol({
   name,
   size = 24,

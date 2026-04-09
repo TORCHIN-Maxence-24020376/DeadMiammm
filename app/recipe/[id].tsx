@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -18,25 +18,22 @@ export default function RecipeDetailsScreen() {
   const { palette } = useAppTheme();
   const { products } = useInventory();
   const { expiringSoonDays } = useAppSettings();
+  const [isPreparationStarted, setIsPreparationStarted] = useState(false);
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
 
   const recipe = useMemo(() => {
     const recipes = buildRecipeSuggestions(products, { expiringSoonDays });
     return recipes.find((candidate) => candidate.id === recipeId);
   }, [expiringSoonDays, products, recipeId]);
 
-  const steps = useMemo(() => {
-    if (!recipe) {
-      return [];
-    }
+  const steps = recipe?.steps ?? [];
+  const completedCount = completedSteps.length;
+  const progressPercent = steps.length === 0 ? 0 : Math.round((completedCount / steps.length) * 100);
 
-    const [main, second, third] = recipe.ingredients;
-
-    return [
-      `Prépare ${main ?? "l'ingrédient principal"} en portions régulières.`,
-      `Mélange avec ${second ?? 'un accompagnement'} puis assaisonne selon ton goût.`,
-      `Termine avec ${third ?? 'une touche finale'} et cuis/chauffe 8 à 12 minutes.`,
-    ];
-  }, [recipe]);
+  useEffect(() => {
+    setIsPreparationStarted(false);
+    setCompletedSteps([]);
+  }, [recipe?.id]);
 
   const onBack = () => {
     if (router.canGoBack()) {
@@ -47,9 +44,30 @@ export default function RecipeDetailsScreen() {
     router.replace('/recipes');
   };
 
-  const onStartCooking = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('Recette lancée', 'Tu peux maintenant suivre les étapes et cuisiner.');
+  const onStartCooking = async () => {
+    setIsPreparationStarted(true);
+    setCompletedSteps([]);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const onResetPreparation = async () => {
+    setCompletedSteps([]);
+    await Haptics.selectionAsync();
+  };
+
+  const toggleStep = async (index: number) => {
+    if (!isPreparationStarted) {
+      return;
+    }
+
+    setCompletedSteps((current) => {
+      if (current.includes(index)) {
+        return current.filter((value) => value !== index);
+      }
+
+      return [...current, index].sort((a, b) => a - b);
+    });
+    await Haptics.selectionAsync();
   };
 
   return (
@@ -64,7 +82,7 @@ export default function RecipeDetailsScreen() {
           <IconSymbol name="chevron.left" size={18} color={palette.textPrimary} />
         </Pressable>
 
-        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Détail recette</Text>
+        <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Detail recette</Text>
 
         <View style={styles.iconButton} />
       </View>
@@ -75,7 +93,7 @@ export default function RecipeDetailsScreen() {
             <IconSymbol name="fork.knife" size={28} color={palette.textTertiary} />
             <Text style={[Typography.titleMd, { color: palette.textPrimary }]}>Recette introuvable</Text>
             <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
-              Reviens à l'écran précédent pour régénérer les suggestions.
+              Reviens a l ecran precedent pour regenerer les suggestions.
             </Text>
             <Pressable
               onPress={() => router.replace('/recipes')}
@@ -91,12 +109,12 @@ export default function RecipeDetailsScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={[styles.heroCard, { backgroundColor: palette.accentPrimary }]}>
             <IconSymbol name="fork.knife" size={32} color={palette.textInverse} />
-            <View style={{ flex: 1, gap: 4 }}>
+            <View style={styles.heroTextWrap}>
               <Text style={[Typography.titleMd, { color: palette.textInverse }]}>{recipe.title}</Text>
-              <View style={[styles.timeRow]}>
+              <View style={styles.timeRow}>
                 <IconSymbol name="clock" size={13} color={palette.textInverse + 'CC'} />
                 <Text style={[Typography.labelSm, { color: palette.textInverse + 'CC' }]}>
-                  Temps estimé: {recipe.time}
+                  Temps estime: {recipe.time}
                 </Text>
               </View>
             </View>
@@ -105,7 +123,7 @@ export default function RecipeDetailsScreen() {
           <View style={[styles.card, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
             <View style={styles.sectionTitle}>
               <View style={[styles.sectionDot, { backgroundColor: palette.accentPrimary }]} />
-              <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Ingrédients</Text>
+              <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Ingredients</Text>
             </View>
             <View style={styles.listWrap}>
               {recipe.ingredients.map((ingredient, index) => (
@@ -117,32 +135,135 @@ export default function RecipeDetailsScreen() {
             </View>
           </View>
 
+          {isPreparationStarted ? (
+            <View style={[styles.card, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
+              <View style={styles.sectionTitle}>
+                <View style={[styles.sectionDot, { backgroundColor: palette.success }]} />
+                <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Preparation en cours</Text>
+              </View>
+
+              <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                {completedCount}/{steps.length} etape{steps.length > 1 ? 's' : ''} validee{completedCount > 1 ? 's' : ''}
+              </Text>
+
+              <View style={[styles.progressTrack, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: `${progressPercent}%`,
+                      backgroundColor: progressPercent === 100 ? palette.success : palette.accentPrimary,
+                    },
+                  ]}
+                />
+              </View>
+
+              {progressPercent === 100 ? (
+                <Text style={[Typography.bodySm, { color: palette.success }]}>
+                  Toutes les etapes sont pretes. Tu peux passer en cuisine.
+                </Text>
+              ) : (
+                <Text style={[Typography.bodySm, { color: palette.textSecondary }]}>
+                  Touche une etape pour la marquer comme faite.
+                </Text>
+              )}
+
+              <Pressable
+                onPress={() => {
+                  void onResetPreparation();
+                }}
+                style={({ pressed }) => [
+                  styles.resetButton,
+                  { backgroundColor: pressed ? palette.surfacePressed : palette.surfaceSoft },
+                ]}>
+                <Text style={[Typography.labelMd, { color: palette.textPrimary }]}>Reinitialiser les etapes</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <View style={[styles.card, { backgroundColor: palette.surface, shadowColor: palette.shadowDark }]}>
             <View style={styles.sectionTitle}>
               <View style={[styles.sectionDot, { backgroundColor: palette.warning }]} />
-              <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Étapes recommandées</Text>
+              <Text style={[Typography.labelLg, { color: palette.textPrimary }]}>Etapes recommandees</Text>
             </View>
             <View style={styles.listWrap}>
-              {steps.map((step, index) => (
-                <View key={`${recipe.id}-step-${index}`} style={styles.stepRow}>
-                  <View style={[styles.stepIndex, { backgroundColor: palette.accentPrimary }]}>
-                    <Text style={[Typography.labelSm, { color: palette.textInverse }]}>{index + 1}</Text>
+              {steps.map((step, index) => {
+                const isCompleted = completedSteps.includes(index);
+                const stepContent = (
+                  <View style={styles.stepRow}>
+                    <View
+                      style={[
+                        styles.stepIndex,
+                        {
+                          backgroundColor: isCompleted
+                            ? palette.success
+                            : isPreparationStarted
+                              ? palette.accentPrimary
+                              : palette.overlay,
+                        },
+                      ]}>
+                      {isCompleted ? (
+                        <IconSymbol name="checkmark" size={12} color={palette.textInverse} />
+                      ) : (
+                        <Text
+                          style={[
+                            Typography.labelSm,
+                            {
+                              color: isPreparationStarted ? palette.textInverse : palette.accentPrimary,
+                            },
+                          ]}>
+                          {index + 1}
+                        </Text>
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        Typography.bodySm,
+                        {
+                          color: palette.textPrimary,
+                          flex: 1,
+                          textDecorationLine: isCompleted ? 'line-through' : 'none',
+                        },
+                      ]}>
+                      {step}
+                    </Text>
                   </View>
-                  <Text style={[Typography.bodySm, { color: palette.textPrimary, flex: 1 }]}>{step}</Text>
-                </View>
-              ))}
+                );
+
+                if (!isPreparationStarted) {
+                  return <View key={`${recipe.id}-step-${index}`}>{stepContent}</View>;
+                }
+
+                return (
+                  <Pressable
+                    key={`${recipe.id}-step-${index}`}
+                    onPress={() => {
+                      void toggleStep(index);
+                    }}
+                    style={({ pressed }) => [
+                      styles.stepPressable,
+                      { backgroundColor: pressed ? palette.surfacePressed : 'transparent' },
+                    ]}>
+                    {stepContent}
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
 
-          <Pressable
-            onPress={onStartCooking}
-            style={({ pressed }) => [
-              styles.ctaButton,
-              { backgroundColor: pressed ? palette.accentPrimaryStrong : palette.accentPrimary },
-            ]}>
-            <IconSymbol name="flame.fill" size={17} color={palette.textInverse} />
-            <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Démarrer la préparation</Text>
-          </Pressable>
+          {!isPreparationStarted ? (
+            <Pressable
+              onPress={() => {
+                void onStartCooking();
+              }}
+              style={({ pressed }) => [
+                styles.ctaButton,
+                { backgroundColor: pressed ? palette.accentPrimaryStrong : palette.accentPrimary },
+              ]}>
+              <IconSymbol name="flame.fill" size={17} color={palette.textInverse} />
+              <Text style={[Typography.labelLg, { color: palette.textInverse }]}>Demarrer la preparation</Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -177,6 +298,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+  },
+  heroTextWrap: {
+    flex: 1,
+    gap: 4,
   },
   timeRow: {
     flexDirection: 'row',
@@ -217,15 +342,31 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
   },
-  row: {
-    flexDirection: 'row',
+  progressTrack: {
+    height: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    minWidth: 2,
+  },
+  resetButton: {
+    height: 42,
+    borderRadius: Radii.capsule,
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+  },
+  stepPressable: {
+    borderRadius: 12,
   },
   stepRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
+    paddingVertical: 2,
   },
   stepIndex: {
     width: 24,

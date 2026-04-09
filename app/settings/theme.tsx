@@ -2,11 +2,11 @@ import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { IconSymbol, IconSymbolName } from '@/components/ui/icon-symbol';
 import { Radii, ThemeMode, Typography } from '@/constants/theme';
 import { useAppTheme } from '@/providers/theme-provider';
 
-const modes: { key: ThemeMode; title: string; subtitle: string; icon: string }[] = [
+const modes: { key: ThemeMode; title: string; subtitle: string; icon: IconSymbolName }[] = [
   { key: 'system', title: 'Automatique', subtitle: 'Suit le thème de l\u2019appareil', icon: 'circle.lefthalf.filled' },
   { key: 'light', title: 'Clair', subtitle: 'Interface lumineuse chaleureuse', icon: 'sun.max.fill' },
   { key: 'dark', title: 'Sombre', subtitle: 'Interface sombre premium', icon: 'moon.fill' },
